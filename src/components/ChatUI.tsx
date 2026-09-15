@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
+import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -58,6 +59,8 @@ export const ChatUI = (props: ChatUIProps) => {
   // root collapses to content height and the input bar floats at the top.
   const height = typeof rows === "number" && rows > 0 ? rows : 24;
   const [inputValue, setInputValue] = React.useState("");
+  const [slashOpen, setSlashOpen] = React.useState(false);
+  const [slashIndex, setSlashIndex] = React.useState(0);
   const [blink, setBlink] = React.useState(true);
 
   React.useEffect(() => {
@@ -65,24 +68,74 @@ export const ChatUI = (props: ChatUIProps) => {
     return () => clearInterval(t);
   }, []);
 
+  const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
+  const slashCommands = React.useMemo(
+    () => (slashOpen ? filterSlashCommands(slashQuery) : []),
+    [slashOpen, slashQuery],
+  );
+  const closeSlashMenu = React.useCallback(() => {
+    setSlashOpen(false);
+    setSlashIndex(0);
+  }, []);
+  React.useEffect(() => {
+    if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
+  }, [slashOpen, slashCommands.length]);
+
   useInput((ch, key) => {
+    // While the menu is open, Tab accepts the highlight (Shift+Tab keeps
+    // its auto-approve toggle). Bare Tab only flips Plan/Build when closed.
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
-    if (key.tab) { if (!props.isRunning) props.onModeToggle(); return; }
+    if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
     if (key.ctrl && (ch === "c" || ch === "C")) { props.onExit(); return; }
-    if (key.escape) { props.onCancel(); return; }
+    if (key.escape) {
+      if (slashOpen) { closeSlashMenu(); return; }
+      props.onCancel();
+      return;
+    }
+    if (slashOpen && slashCommands.length > 0 && (key.upArrow || key.downArrow)) {
+      setSlashIndex((i) => key.upArrow
+        ? (i - 1 + slashCommands.length) % slashCommands.length
+        : (i + 1) % slashCommands.length);
+      return;
+    }
+    if (slashOpen && slashCommands.length > 0 && (key.return || key.tab)) {
+      const picked = slashCommands[Math.min(slashIndex, slashCommands.length - 1)];
+      if (picked) {
+        setInputValue("");
+        closeSlashMenu();
+        props.onSubmit(picked.name);
+        return;
+      }
+      closeSlashMenu();
+      return;
+    }
     if (props.isRunning) return;
     if (key.return) {
       const v = inputValue.trim();
       if (v) { setInputValue(""); props.onSubmit(v); }
       return;
     }
-    if (key.delete || key.backspace) { setInputValue((prev) => prev.slice(0, -1)); return; }
+    if (key.delete || key.backspace) {
+      setInputValue((prev) => {
+        const next = prev.slice(0, -1);
+        if (!next.startsWith("/")) closeSlashMenu();
+        else setSlashIndex(0);
+        return next;
+      });
+      return;
+    }
     if (typeof ch === "string" && ch.length === 1 && !key.ctrl && !key.meta) {
-      setInputValue((prev) => prev + ch);
-      // Auto-open menu when "/" is typed as the first character
-      if (ch === "/" && inputValue === "") {
-        props.onSubmit("/");
-      }
+      setInputValue((prev) => {
+        const next = prev + ch;
+        if (next.startsWith("/") && !props.isRunning) {
+          if (!slashOpen) { setSlashOpen(true); setSlashIndex(0); }
+          else setSlashIndex(0);
+        } else if (slashOpen) {
+          closeSlashMenu();
+        }
+        return next;
+      });
+      // "/" opens the floating CommandMenu (open/close handled above).
       return;
     }
   });
@@ -135,6 +188,11 @@ export const ChatUI = (props: ChatUIProps) => {
 
         {props.isRunning && <Text>{DIM}...{RESET}</Text>}
       </Box>
+
+      {/* Floating slash-command menu -- directly above the input bar */}
+      {slashOpen && slashCommands.length > 0 && (
+        <CommandMenu commands={slashCommands} selectedIndex={slashIndex} />
+      )}
 
       {/* Input bar -- visible, bordered, with placeholder and cursor */}
       <Box

@@ -113,9 +113,29 @@ export function ChatHost({
   const onSubmit = React.useCallback(
     async (input: string) => {
       if (input.startsWith("/")) {
-        if (input === "/clear") setMessages([]);
-        if (input === "/exit" || input === "/quit") process.exit(0);
-        if (input === "/" || input === "/menu") setShowMenu(true);
+        const cmd = input.trim().toLowerCase();
+        if (cmd === "/clear") setMessages([]);
+        else if (cmd === "/quit" || cmd === "/exit") process.exit(0);
+        else if (cmd === "/help") {
+          mutateMessages((prev) => [...prev, {
+            role: "assistant",
+            content: ["/settings - Modify agent configuration", "/model - Switch model or provider", "/theme - Change color theme", "/account - View Toolify account", "/history - Recent conversation turns", "/help - Show available commands", "/usage - View token consumption and cost", "/quit - Exit TOOLIFY application"].join("\n"),
+          }]);
+        }
+        else if (cmd === "/usage") {
+          const m = meterRef.current!;
+          mutateMessages((prev) => [...prev, {
+            role: "assistant",
+            content: `Tokens: ${m.usage.inputTokens} in / ${m.usage.outputTokens} out | Cost: $${m.costUsd.toFixed(4)} | Turns: ${turnCount}`,
+          }]);
+        }
+        else if (cmd === "/history") {
+          mutateMessages((prev) => [...prev, {
+            role: "assistant",
+            content: history.length === 0 ? "No history yet." : history.slice(-10).map((h) => `${h.role}: ${h.preview}`).join("\n"),
+          }]);
+        }
+        else if (cmd === "/" || cmd === "/menu" || cmd === "/settings" || cmd === "/model" || cmd === "/theme" || cmd === "/account") setShowMenu(true);
         return;
       }
 
