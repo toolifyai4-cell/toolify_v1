@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "ink";
+import { render, useApp } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { PathGuard } from "../tools/fs-tools.js";
 import { PolicyEngine, TOOL_SCHEMAS } from "../tools/registry.js";
@@ -14,6 +14,7 @@ import { VerificationGate } from "../verify/gate.js";
 import type { ToolifyConfig } from "./run.js";
 import { createAdapter } from "./run.js";
 import { ChatUI, type ChatMessage } from "../components/ChatUI.js";
+import { buildSessionSummary } from "./session-summary.js";
 import { clearScreen, patchTtyForFullScreen } from "./screen.js";
 import { MenuScreen } from "../components/MenuScreen.js";
 import { loadAuthSession } from "../auth/index.js";
@@ -52,7 +53,9 @@ export function ChatHost({
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = React.useState(false);
   const [turnCount, setTurnCount] = React.useState(0);
+  const turnCountRef = React.useRef(0);
   const [showMenu, setShowMenu] = React.useState(false);
+  const startedAtRef = React.useRef<number>(Date.now());
 
   const session = React.useMemo(() => loadAuthSession(workspace), [workspace]);
   const userName = session?.user?.name ?? "User";
@@ -93,6 +96,33 @@ export function ChatHost({
     }
   }, [workspace]);
 
+  const { exit } = useApp();
+
+  const exitWithSummary = React.useCallback(() => {
+    const meter = meterRef.current;
+    const summary = buildSessionSummary({
+      model: cfg.model,
+      startedAtMs: startedAtRef.current,
+      endedAtMs: Date.now(),
+      inputTokens: meter?.usage.inputTokens ?? 0,
+      outputTokens: meter?.usage.outputTokens ?? 0,
+    });
+    exit();
+    // Print on the next tick so Ink's unmount/erase pass finishes first;
+    // otherwise the frame teardown wipes the summary off the screen.
+    setTimeout(() => {
+      process.stdout.write("\u001Bc");
+      console.log(summary);
+      process.exit(0);
+    }, 50);
+  }, [cfg.model, exit]);
+
+  React.useEffect(() => {
+    const onSigint = (): void => { exitWithSummary(); };
+    process.on("SIGINT", onSigint);
+    return () => { process.off("SIGINT", onSigint); };
+  }, [exitWithSummary]);
+
   const mutateMessages = React.useCallback((fn: (prev: ChatMessage[]) => ChatMessage[]) => {
     setMessages((prev) => fn(prev));
     }, []);
@@ -115,7 +145,7 @@ export function ChatHost({
       if (input.startsWith("/")) {
         const cmd = input.trim().toLowerCase();
         if (cmd === "/clear") setMessages([]);
-        else if (cmd === "/quit" || cmd === "/exit") process.exit(0);
+        else if (cmd === "/quit" || cmd === "/exit") { exitWithSummary(); return; }
         else if (cmd === "/help") {
           mutateMessages((prev) => [...prev, {
             role: "assistant",
@@ -126,7 +156,7 @@ export function ChatHost({
           const m = meterRef.current!;
           mutateMessages((prev) => [...prev, {
             role: "assistant",
-            content: `Tokens: ${m.usage.inputTokens} in / ${m.usage.outputTokens} out | Cost: $${m.costUsd.toFixed(4)} | Turns: ${turnCount}`,
+            content: `Tokens: ${m.usage.inputTokens} in / ${m.usage.outputTokens} out | Cost: $${m.costUsd.toFixed(4)} | Turns: ${turnCountRef.current}`,
           }]);
         }
         else if (cmd === "/history") {
@@ -140,7 +170,8 @@ export function ChatHost({
       }
 
       mutateMessages((prev) => [...prev, { role: "user", content: input }]);
-      setTurnCount((t) => t + 1);
+      turnCountRef.current += 1;
+      setTurnCount(turnCountRef.current);
       setIsRunning(true);
 
       const digest = new TaskDigest(input);
@@ -249,8 +280,8 @@ export function ChatHost({
         setAutoApprove((a) => AUTO_ORDER[(AUTO_ORDER.indexOf(a) + 1) % AUTO_ORDER.length])
       }
       onClear={() => setMessages([])}
-      onExit={() => process.exit(0)}
-      onCancel={() => process.exit(0)}
+      onExit={exitWithSummary}
+      onCancel={exitWithSummary}
     />
     );
 }
