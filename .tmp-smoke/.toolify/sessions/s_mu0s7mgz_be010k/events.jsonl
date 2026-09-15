@@ -1,0 +1,4 @@
+{"type":"user_message","content":"Write a README saying hello","ts":1789362465156}
+{"type":"usage_update","usage":{"inputTokens":10,"outputTokens":20},"costUsd":0,"ts":1789362465161}
+{"type":"assistant_message","content":"I completed your task.","usage":{"inputTokens":10,"outputTokens":20},"ts":1789362465162}
+{"type":"run_finished","reason":"stop","ts":1789362465163}

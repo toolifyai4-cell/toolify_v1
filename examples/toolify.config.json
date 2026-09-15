@@ -1,0 +1,14 @@
+{
+  "provider": "openai-compatible",
+  "baseUrl": "http://localhost:11434/v1",
+  "model": "llama3.1",
+  "maxIterations": 40,
+  "policy": {
+    "allowlist": ["node *", "npm *", "npx *", "echo *", "git status"],
+    "denyPaths": [".env*"]
+  },
+  "verification": {
+    "commands": [],
+    "maxRounds": 3
+  }
+}

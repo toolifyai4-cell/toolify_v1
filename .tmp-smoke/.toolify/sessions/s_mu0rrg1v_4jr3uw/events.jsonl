@@ -1,0 +1,4 @@
+{"type":"user_message","content":"TypedOK","ts":1789361710824}
+{"type":"usage_update","usage":{"inputTokens":10,"outputTokens":20},"costUsd":0,"ts":1789361710835}
+{"type":"assistant_message","content":"Mock turn: hello from the scripted adapter!","usage":{"inputTokens":10,"outputTokens":20},"ts":1789361710836}
+{"type":"run_finished","reason":"stop","ts":1789361710837}

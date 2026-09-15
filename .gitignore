@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.toolify/sessions/
+.toolify/objects/
+*.log
+.DS_Store
+.env

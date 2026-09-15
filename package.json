@@ -1,0 +1,37 @@
+{
+  "name": "toolify",
+  "version": "0.1.0",
+  "description": "TOOLIFY - a Cline-class AI coding agent (clean-room CLI-first build)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "toolify": "./dist/index.js"
+  },
+  "scripts": {
+    "toolify": "tsx src/index.ts",
+    "chat": "tsx src/index.ts chat",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^17.4.2",
+    "ink": "^7.1.1",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.3.0",
+    "react-reconciler": "^0.34.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
