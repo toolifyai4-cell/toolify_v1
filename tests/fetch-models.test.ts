@@ -170,13 +170,16 @@ describe("getModelsForProvider — OpenRouter / Groq / Ollama probing", () => {
     expect(result.error).toContain("Org not verified");
   });
 
-  it("never rejects — network failures become error results", async () => {
+  it("never rejects — network failures return fallback models with isFallback flag", async () => {
     const { fetchImpl } = mockFetch([
       { match: () => true, respond: () => { throw new TypeError("fetch failed"); } },
     ]);
     const result = await getModelsForProvider("deepseek", "k", { fetchImpl });
-    expect(result.models).toEqual([]);
-    expect(result.error).toContain("Network error");
+    // Now returns fallback models instead of empty array
+    expect(result.models.length).toBeGreaterThan(0);
+    expect(result.models.every((m) => m.isFallback === true)).toBe(true);
+    expect(result.models.every((m) => m.fetchedAt)).toBe(true);
+    expect(result.error).toContain("Offline");
   });
 });
 

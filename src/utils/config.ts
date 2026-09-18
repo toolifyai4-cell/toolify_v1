@@ -53,6 +53,8 @@ export const PROVIDER_ENV_VARS: Record<string, string> = {
  * Gemini's chat base is Google's OpenAI-compatibility layer (Bearer auth),
  * which is distinct from the native verification endpoint in
  * `models/verify-key.ts`.
+ * Static defaults — subject to API provider endpoint drift. Override via
+ * environment variables (e.g., OPENAI_BASE_URL, OPENROUTER_BASE_URL).
  */
 export const PROVIDER_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
@@ -74,6 +76,8 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
 export interface ToolifyConfig {
   apiKeys: Record<string, string>;
   baseUrls: Record<string, string>;
+  /** Persisted UI theme id (see src/theme/themes.ts). */
+  theme?: string;
 }
 
 function configDir(): string {
@@ -217,7 +221,7 @@ function ensureConfigDirSync(): void {
   }
 }
 
-function readConfigSync(): ToolifyConfig {
+export function readConfigSync(): ToolifyConfig {
   ensureConfigDirSync();
   const path = configPath();
   if (!existsSync(path)) return { apiKeys: {}, baseUrls: {} };

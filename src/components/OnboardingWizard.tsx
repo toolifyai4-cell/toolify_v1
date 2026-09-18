@@ -100,9 +100,9 @@ const PROVIDERS: Record<ToolifyConfig["provider"], ProviderInfo> = {
   },
   gemini: {
     label: "Google Gemini",
-    description: "Gemini Pro, Gemini Flash, Gemini 2.0",
+    description: "Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0",
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    models: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"],
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
     needsApiKey: true,
   },
   perplexity: {

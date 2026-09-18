@@ -109,7 +109,66 @@ export interface ModelPricing {
   inputPerM: number;
   /** USD per million output tokens */
   outputPerM: number;
+  /** True when pricing is a static default estimate (not from live config). */
+  isEstimate?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+
+/** Color tokens that a Theme provides to all UI components. */
+export interface ThemeTokens {
+  /** Main brand color used for active borders, accents, cursor */
+  primary: string;
+  /** Secondary actions, muted elements */
+  secondary: string;
+  /** Panel backgrounds (used for modals, dropdowns, boxes) */
+  background: string;
+  /** Elevated surfaces inside panels */
+  surface: string;
+  /** Box borders around interactive elements */
+  border: string;
+  /** Primary reading text */
+  text: string;
+  /** Secondary/dim text */
+  textMuted: string;
+  /** Text color on top of primary/active backgrounds */
+  textInverted: string;
+  /** Highlights, links, focused states */
+  accent: string;
+  /** Success states (green checkmarks, etc.) */
+  success: string;
+  /** Warnings (yellow) */
+  warning: string;
+  /** Errors (red) */
+  error: string;
+  /** Info/neutral color (blue/cyan) */
+  info: string;
+}
+
+/** A complete theme definition: ID, display name, darkness flag, and token map. */
+export interface Theme {
+  /** Unique identifier — used in config.json and SettingsMenu cycling. */
+  id: string;
+  /** Display name shown in the UI. */
+  name: string;
+  /** True when the theme uses dark backgrounds. */
+  isDark: boolean;
+  /** The color tokens map. */
+  tokens: ThemeTokens;
+}
+
+/** Default theme applied when none is persisted or recognized. */
+export const DEFAULT_THEME_ID: string = "toolify-dark";
+
+/** All built-in themes, in display order. */
+export const THEME_IDS: readonly string[] = [
+  "toolify-dark",
+  "monochrome",
+  "matrix",
+  "dracula",
+];
 
 // ---------------------------------------------------------------------------
 // Policy

@@ -22,8 +22,14 @@ export interface ModelDescriptor {
   readonly providerName: string;
   /** e.g. "1.0M", "512K", "128K", "32K" (em dash when unknown). */
   readonly contextLimit: string;
+  /** True when contextLimit is a static default estimate (not from live API). */
+  readonly contextLimitEstimate?: boolean;
   /** True when marked free or detected on the provider's free tier. */
   readonly isFree?: boolean;
+  /** True when this model comes from a static fallback (not live API). */
+  readonly isFallback?: boolean;
+  /** ISO timestamp when the fallback data was generated. */
+  readonly fetchedAt?: string;
 }
 
 export interface RegistryDeps {
@@ -53,6 +59,29 @@ export const PROVIDER_NAMES: Record<string, string> = {
   vllm: "vLLM",
   jan: "Jan",
   mock: "Mock (offline)",
+};
+
+/**
+ * Default context limits per provider — used as estimates when the provider
+ * API doesn't return contextTokens. These are STATIC DEFAULTS that will
+ * drift over time and should be labeled as estimates in the UI.
+ */
+export const DEFAULT_CONTEXT_LIMITS: Record<string, { tokens: number; label: string }> = {
+  gemini: { tokens: 1_048_576, label: "1.0M" },
+  openai: { tokens: 131_072, label: "128K" },
+  anthropic: { tokens: 200_000, label: "200K" },
+  groq: { tokens: 131_072, label: "131K" },
+  deepseek: { tokens: 64_000, label: "64K" },
+  openrouter: { tokens: 128_000, label: "128K" },
+  perplexity: { tokens: 128_000, label: "128K" },
+  omniroute: { tokens: 128_000, label: "128K" },
+  unoroute: { tokens: 128_000, label: "128K" },
+  litellm: { tokens: 128_000, label: "128K" },
+  ollama: { tokens: 131_072, label: "131K" },
+  lmstudio: { tokens: 131_072, label: "131K" },
+  vllm: { tokens: 131_072, label: "131K" },
+  jan: { tokens: 131_072, label: "131K" },
+  mock: { tokens: 32_768, label: "32K" },
 };
 
 export async function getAllConfiguredModels(deps: RegistryDeps = {}): Promise<ModelDescriptor[]> {
@@ -88,15 +117,26 @@ async function probeOne(
   } catch {
     return []; // probe threw — drop this provider from the aggregation
   }
-  if (result.error) return []; // 401/403/network — not usable for this key
-  return result.models.map((m) => ({
-    id: m.id,
-    displayName: prettifyModelId(m.id),
-    providerId: entry.providerId,
-    providerName: PROVIDER_NAMES[entry.providerId] ?? entry.providerId,
-    contextLimit: formatContextLimit(m.contextTokens),
-    ...(m.isFree ? { isFree: true } : {}),
-  }));
+  // Keep fallback models even if there's an error (they're tagged with isFallback)
+  if (result.error && !result.models.some(m => m.isFallback)) return [];
+  const defaultLimit = DEFAULT_CONTEXT_LIMITS[entry.providerId];
+  return result.models.map((m) => {
+    const hasLiveContext = typeof m.contextTokens === "number" && m.contextTokens > 0;
+    return {
+      id: m.id,
+      displayName: prettifyModelId(m.id),
+      providerId: entry.providerId,
+      providerName: PROVIDER_NAMES[entry.providerId] ?? entry.providerId,
+      contextLimit: hasLiveContext
+        ? formatTokenLimit(m.contextTokens)
+        : defaultLimit
+        ? formatTokenLimit(defaultLimit.tokens)
+        : "N/A",
+      contextLimitEstimate: !hasLiveContext && !!defaultLimit,
+      ...(m.isFree ? { isFree: true } : {}),
+      ...(m.isFallback ? { isFallback: true, fetchedAt: m.fetchedAt } : {}),
+    };
+  });
 }
 
 /** "gemini-2.5-flash" -> "Gemini 2.5 Flash"; "x/y:free" -> "Y" (free flag kept separately). */
@@ -115,10 +155,19 @@ export function prettifyModelId(id: string): string {
     .join(" ");
 }
 
-/** 1_048_576 -> "1.0M"; 512_000 -> "512K"; 32768 -> "32K"; undefined -> "—". */
-export function formatContextLimit(tokens?: number): string {
-  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return "—";
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1000) return `${Math.floor(tokens / 1000)}K`;
+/** 
+ * Format token limit for display badges.
+ * 1_000_000 -> "1M"; 1_500_000 -> "1.5M"; 2_000_000 -> "2M"
+ * 256_000 -> "256K"; 131_072 -> "131K"; 32_768 -> "33K"
+ * Returns "N/A" if no context attribute is provided.
+ */
+export function formatTokenLimit(tokens?: number): string {
+  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return "N/A";
+  if (tokens >= 1_000_000) {
+    // Round to nearest 0.1M (100,000 tokens), then format
+    const millions = Math.round(tokens / 100_000) / 10;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  }
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`;
   return String(Math.round(tokens));
 }

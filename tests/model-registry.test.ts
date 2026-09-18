@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   getAllConfiguredModels,
-  formatContextLimit,
+  formatTokenLimit,
   prettifyModelId,
   type RegistryDeps,
 } from "../src/models/model-registry.js";
@@ -68,7 +68,8 @@ describe("getAllConfiguredModels — 0 / 1 / multi-provider aggregation", () => 
       displayName: "Gemini 2.5 Flash",
       providerId: "gemini",
       providerName: "Google Gemini",
-      contextLimit: "1.0M",
+      contextLimit: "1M",
+      contextLimitEstimate: false,
       isFree: true,
     });
   });
@@ -151,12 +152,15 @@ describe("getAllConfiguredModels — 0 / 1 / multi-provider aggregation", () => 
 
 describe("context-limit formatting", () => {
   it("formats token counts into picker badges", () => {
-    expect(formatContextLimit(1_048_576)).toBe("1.0M");
-    expect(formatContextLimit(2_000_000)).toBe("2.0M");
-    expect(formatContextLimit(512_000)).toBe("512K");
-    expect(formatContextLimit(131_072)).toBe("131K");
-    expect(formatContextLimit(32_768)).toBe("32K");
-    expect(formatContextLimit(undefined)).toBe("—");
+    expect(formatTokenLimit(1_048_576)).toBe("1M");
+    expect(formatTokenLimit(1_500_000)).toBe("1.5M");
+    expect(formatTokenLimit(2_000_000)).toBe("2M");
+    expect(formatTokenLimit(512_000)).toBe("512K");
+    expect(formatTokenLimit(131_072)).toBe("131K");
+    expect(formatTokenLimit(262_144)).toBe("262K");
+    expect(formatTokenLimit(32_768)).toBe("33K");
+    expect(formatTokenLimit(undefined)).toBe("N/A");
+    expect(formatTokenLimit(0)).toBe("N/A");
   });
 
   it("prettifies ids into display names", () => {

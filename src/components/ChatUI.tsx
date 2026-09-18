@@ -12,6 +12,8 @@ export interface ChatMessage {
   content: string;
   toolCalls?: ToolCall[];
   toolResults?: Array<{ callId: string; content: string; isError?: boolean }>;
+  /** True while this assistant bubble is a live placeholder awaiting tokens. */
+  thinking?: boolean;
 }
 
 export interface StatusInfo {
@@ -89,6 +91,17 @@ export function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
   return String(Math.round(n));
+}
+
+/** Returns true when a message content string is a system banner (error/timeout/cancelled)
+ * rather than a normal assistant response. Such banners are rendered as standalone
+ * colored boxes instead of being prefixed with the [AGENT] label. */
+export function isErrorBanner(content: string): boolean {
+  return (
+    content.startsWith("[ERROR]") ||
+    content.startsWith("[TIMEOUT]") ||
+    content.startsWith("[CANCELLED]")
+  );
 }
 
 
@@ -230,7 +243,13 @@ export const ChatUI = (props: ChatUIProps) => {
                       ? m.content.split("\n").map((line, j) => (
                           <Text key={j}>{`  ${line}`}</Text>
                         ))
-                      : null}
+                      : m.thinking
+                        ? (
+                          <Box alignItems="center" marginLeft={2}>
+                            <Text>{DIM}...{RESET}</Text>
+                          </Box>
+                        )
+                        : null}
                   </Box>
                 )}
 
@@ -255,6 +274,18 @@ export const ChatUI = (props: ChatUIProps) => {
                 )}
               </Box>
             ))}
+
+            {/* System banners (error / timeout / cancelled) rendered as colored boxes
+                instead of normal [AGENT] messages. */}
+            {props.messages.filter((m) => m.role === "assistant" && isErrorBanner(m.content)).map((m, i) => {
+              const isError = m.content.startsWith("[ERROR]");
+              const isTimeout = m.content.startsWith("[TIMEOUT]");
+              return (
+                <Box key={`banner-${i}`} marginLeft={2} borderStyle="round" borderColor={isTimeout ? "yellow" : "red"}>
+                  <Text color={isTimeout ? "yellow" : "red"}>{m.content}</Text>
+                </Box>
+              );
+            })}
 
             {props.isRunning && <Text>{DIM}...{RESET}</Text>}
           </>
@@ -286,7 +317,7 @@ export const ChatUI = (props: ChatUIProps) => {
         </Box>
       </Box>
       {/* Hint line */}
-      <Box justifyContent="space-between" paddingX={1} height={2}>
+      <Box justifyContent="space-between" paddingX={1} height={3}>
         <Box flexDirection="column">
           <Text>
             <Text color="white">Model: </Text>
@@ -310,6 +341,9 @@ export const ChatUI = (props: ChatUIProps) => {
           </Text>
           <Text>
             {DIM}{props.workspace}{RESET}
+          </Text>
+          <Text>
+            {DIM}Ctrl+Backspace: Quit | Esc: Stop/Close{RESET}
           </Text>
         </Box>
         <Box flexDirection="column" alignItems="flex-end">

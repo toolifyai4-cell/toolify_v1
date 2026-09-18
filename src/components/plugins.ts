@@ -79,12 +79,14 @@ export function defaultSkillState(name: string): boolean {
   return (DEFAULT_ACTIVE_SKILLS as readonly string[]).includes(name);
 }
 
-/** Rough tokens per compacted message, used to turn counts into savings. */
+/** Rough tokens per compacted message, used to turn counts into savings.
+ * Static default — subject to model/tokenizer drift. */
 export const AVG_TOKENS_PER_MESSAGE = 120;
 
 /**
  * Fallback compression ratio applied to live input tokens when the session
  * log has no compaction events yet (documented estimate, not a fake metric).
+ * Static default — subject to model/tokenizer drift.
  */
 export const PONYTAIL_ESTIMATE_RATIO = 0.08;
 

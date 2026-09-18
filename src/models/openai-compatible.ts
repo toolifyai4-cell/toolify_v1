@@ -12,6 +12,33 @@ import type {
 import { updateQuotaFromHeaders } from "./quota-tracker.js";
 
 /**
+ * Static default pricing table — used when ModelPricing config is not set.
+ * These are ESTIMATES that will drift from reality. Marked with isEstimate=true.
+ * Update when providers change their pricing.
+ */
+const DEFAULT_MODEL_PRICING: Record<string, ModelPricing> = {
+  "gpt-4o": { inputPerM: 0.000005, outputPerM: 0.000015, isEstimate: true },
+  "gpt-4o-mini": { inputPerM: 0.00000015, outputPerM: 0.0000006, isEstimate: true },
+  "gpt-4-turbo": { inputPerM: 0.00001, outputPerM: 0.00003, isEstimate: true },
+  "gpt-3.5-turbo": { inputPerM: 0.0000005, outputPerM: 0.0000015, isEstimate: true },
+  "claude-3-5-sonnet-20241022": { inputPerM: 0.000003, outputPerM: 0.000015, isEstimate: true },
+  "claude-3-opus-20240229": { inputPerM: 0.000015, outputPerM: 0.000075, isEstimate: true },
+  "claude-sonnet-4-20250514": { inputPerM: 0.000003, outputPerM: 0.000015, isEstimate: true },
+  "gemini-1.5-pro": { inputPerM: 0.00000125, outputPerM: 0.000005, isEstimate: true },
+  "gemini-1.5-flash": { inputPerM: 0.000000075, outputPerM: 0.0000003, isEstimate: true },
+  "gemini-2.0-flash": { inputPerM: 0.0000001, outputPerM: 0.0000004, isEstimate: true },
+  "gemini-2.5-pro": { inputPerM: 0.00000125, outputPerM: 0.000005, isEstimate: true },
+  "gemini-2.5-flash": { inputPerM: 0.00000015, outputPerM: 0.0000006, isEstimate: true },
+  "deepseek-chat": { inputPerM: 0.00000014, outputPerM: 0.00000028, isEstimate: true },
+  "deepseek-reasoner": { inputPerM: 0.00000055, outputPerM: 0.00000219, isEstimate: true },
+  "llama-3.3-70b-versatile": { inputPerM: 0.00000059, outputPerM: 0.00000079, isEstimate: true },
+  "llama-3.1-8b-instant": { inputPerM: 0.00000005, outputPerM: 0.00000008, isEstimate: true },
+  "mixtral-8x7b-32768": { inputPerM: 0.00000027, outputPerM: 0.00000027, isEstimate: true },
+  "sonar-pro": { inputPerM: 0.000001, outputPerM: 0.000001, isEstimate: true },
+  "sonar": { inputPerM: 0.000001, outputPerM: 0.000001, isEstimate: true },
+};
+
+/**
  * OpenAI-compatible adapter (OpenAI, OpenRouter, Ollama, LM Studio, etc.).
  *
  * Uses the /chat/completions endpoint with tools declared via JSON Schema.
@@ -37,7 +64,8 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     this.modelId = opts.model;
     this.name = opts.name ?? "openai-compatible";
     this.apiKey = opts.apiKey;
-    this.pricing = opts.pricing ?? { inputPerM: 0, outputPerM: 0 };
+    // Use explicit pricing if provided, otherwise look up defaults (marked as estimates)
+    this.pricing = opts.pricing ?? DEFAULT_MODEL_PRICING[opts.model] ?? { inputPerM: 0, outputPerM: 0 };
     this.providerId = opts.providerId ?? "unknown";
   }
   private readonly apiKey?: string;

@@ -6,6 +6,8 @@ import {
   type PluginSettings,
   type PluginStats,
 } from "./settings.js";
+import { useTheme } from "../theme/ThemeContext.js";
+import type { ThemeTokens } from "../agent/types.js";
 import {
   RUFLO_MODULES,
   RUFLO_ROLES,
@@ -41,13 +43,14 @@ export function skillDomainOf(name: string): SkillDomain | "Extra" {
 }
 
 export function PluginsTab(props: PluginsTabProps): React.ReactElement {
+  const { tokens } = useTheme();
   const subView: PluginsSubView = props.activeSubView ?? "main";
-  if (subView === "agentSkills") return renderAgentSkillsSubView(props);
-  if (subView === "ruflo") return renderRufloSubView(props);
-  return renderMainView(props);
+  if (subView === "agentSkills") return renderAgentSkillsSubView(props, tokens);
+  if (subView === "ruflo") return renderRufloSubView(props, tokens);
+  return renderMainView(props, tokens);
 }
 
-function TopRule(): React.ReactElement {
+function TopRule({ tokens }: { tokens: ThemeTokens }): React.ReactElement {
   return (
     <Box
       borderStyle="single"
@@ -55,15 +58,15 @@ function TopRule(): React.ReactElement {
       borderBottom={false}
       borderLeft={false}
       borderRight={false}
-      borderColor="gray"
+      borderColor={tokens.textMuted}
     />
   );
 }
 
-function renderMainView(props: PluginsTabProps): React.ReactElement {
+function renderMainView(props: PluginsTabProps, tokens: ThemeTokens): React.ReactElement {
   return (
     <Box flexDirection="column">
-      <TopRule />
+      <TopRule tokens={tokens} />
       {PLUGIN_CATALOG.map((plugin: PluginMeta, i: number) => {
         const on = props.plugins[plugin.id];
         const selected = i === props.selectedIndex;
@@ -72,18 +75,18 @@ function renderMainView(props: PluginsTabProps): React.ReactElement {
           <Box key={plugin.id} flexDirection="column" marginBottom={1}>
             <Box flexDirection="row">
               <Box width={2} flexShrink={0}>
-                <Text color={selected ? "yellow" : undefined} bold={selected}>
+                <Text color={selected ? tokens.accent : undefined} bold={selected}>
                   {marker}
                 </Text>
               </Box>
               <Box width={3} flexShrink={0}>
-                <Text color={on ? "green" : "gray"} bold={selected}>
+                <Text color={on ? tokens.success : tokens.textMuted} bold={selected}>
                   {pluginCheckbox(on)}
                 </Text>
               </Box>
               <Box width={16} flexShrink={0}>
                 <Text
-                  color={selected ? "yellow" : "white"}
+                  color={selected ? tokens.accent : tokens.text}
                   bold={selected}
                   wrap="truncate"
                 >
@@ -91,7 +94,7 @@ function renderMainView(props: PluginsTabProps): React.ReactElement {
                 </Text>
               </Box>
               <Box flexGrow={1} flexShrink={1}>
-                <Text color={selected ? "white" : "gray"} wrap="truncate">
+                <Text color={selected ? tokens.text : tokens.textMuted} wrap="truncate">
                   {plugin.description}
                 </Text>
               </Box>
@@ -100,7 +103,7 @@ function renderMainView(props: PluginsTabProps): React.ReactElement {
                 rendered for the highlighted row (accordion behavior). */}
             {selected ? (
               <Box paddingLeft={4}>
-                <Text color={on ? "green" : "gray"}>
+                <Text color={on ? tokens.success : tokens.textMuted}>
                   {"\u2514\u2500 "}
                   {subStatus(plugin.id, on, props.stats)}
                 </Text>
@@ -109,7 +112,7 @@ function renderMainView(props: PluginsTabProps): React.ReactElement {
           </Box>
         );
       })}
-      <TopRule />
+      <TopRule tokens={tokens} />
     </Box>
   );
 }
@@ -147,16 +150,16 @@ function subStatus(
   if (id === "ruflo") return "Engine idle";
   return "Skills disabled";
 }
-function renderAgentSkillsSubView(props: PluginsTabProps): React.ReactElement {
+function renderAgentSkillsSubView(props: PluginsTabProps, tokens: ThemeTokens): React.ReactElement {
   const installed = listInstalledSkills(props.toolifyHome);
   const displaySkills = skillDisplayList(installed);
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
-        <Text bold color="cyan">{"Settings > Plugins > Agent Skills"}</Text>
+        <Text bold color={tokens.primary}>{"Settings > Plugins > Agent Skills"}</Text>
         <Text dimColor>[Esc] Back</Text>
       </Box>
-      <TopRule />
+      <TopRule tokens={tokens} />
       {displaySkills.map((name, i) => {
         const on = skillEnabled(props.plugins, name);
         const selected = i === props.inspectIndex;
@@ -167,51 +170,51 @@ function renderAgentSkillsSubView(props: PluginsTabProps): React.ReactElement {
         return (
           <Box key={name} flexDirection="row">
             <Box width={2}>
-              <Text color={selected ? "yellow" : undefined} bold={selected}>
+              <Text color={selected ? tokens.accent : undefined} bold={selected}>
                 {marker}
               </Text>
             </Box>
             <Box width={3} flexShrink={0}>
-              <Text color={on ? "green" : "gray"} bold={selected}>
+              <Text color={on ? tokens.success : tokens.textMuted} bold={selected}>
                 {pluginCheckbox(on)}
               </Text>
             </Box>
             <Box width={14} flexShrink={0}>
-              <Text color={selected ? "yellow" : "white"} bold={selected} wrap="truncate">
+              <Text color={selected ? tokens.accent : tokens.text} bold={selected} wrap="truncate">
                 {name}
               </Text>
             </Box>
             <Box width={12} flexShrink={0}>
-              <Text color={selected ? "white" : "gray"} wrap="truncate">
+              <Text color={selected ? tokens.text : tokens.textMuted} wrap="truncate">
                 {domain}
               </Text>
             </Box>
             <Box flexGrow={1} flexShrink={1}>
-              <Text color={selected ? "white" : "gray"} wrap="truncate">
+              <Text color={selected ? tokens.text : tokens.textMuted} wrap="truncate">
                 {desc}
               </Text>
             </Box>
           </Box>
         );
       })}
-      <TopRule />
+      <TopRule tokens={tokens} />
       <Box paddingX={1}>
         <Text dimColor>{"Space toggle \u00b7 Esc back"}</Text>
       </Box>
     </Box>
   );
 }
-function renderRufloSubView(props: PluginsTabProps): React.ReactElement {
+function renderRufloSubView(props: PluginsTabProps, tokens: ThemeTokens): React.ReactElement {
   const roleStart = RUFLO_MODULES.length;
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
-        <Text bold color="cyan">{"Settings > Plugins > Ruflo"}</Text>
+        <Text bold color={tokens.primary}>{"Settings > Plugins > Ruflo"}</Text>
         <Text dimColor>[Esc] Back</Text>
       </Box>
-      <TopRule />
+      <TopRule tokens={tokens} />
       <Box paddingX={1}>
-        <Text bold color="white">{"MODULES"}</Text>
+        <Text bold color={tokens.text}>{"MODULES"}</Text>
       </Box>
       {RUFLO_MODULES.map((mod, i) => {
         const on = rufloModuleEnabled(props.plugins, mod.id);
@@ -220,36 +223,36 @@ function renderRufloSubView(props: PluginsTabProps): React.ReactElement {
         return (
           <Box key={mod.id} flexDirection="row">
             <Box width={2}>
-              <Text color={selected ? "yellow" : undefined} bold={selected}>
+              <Text color={selected ? tokens.accent : undefined} bold={selected}>
                 {marker}
               </Text>
             </Box>
             <Box width={3}>
-              <Text color={on ? "green" : "gray"} bold={selected}>
+              <Text color={on ? tokens.success : tokens.textMuted} bold={selected}>
                 {pluginCheckbox(on)}
               </Text>
             </Box>
             <Box width={14}>
-              <Text color={selected ? "yellow" : "white"} bold={selected} wrap="truncate">
+              <Text color={selected ? tokens.accent : tokens.text} bold={selected} wrap="truncate">
                 {mod.id}
               </Text>
             </Box>
             <Box width={12} flexShrink={0}>
-              <Text color={selected ? "white" : "gray"} wrap="truncate">
+              <Text color={selected ? tokens.text : tokens.textMuted} wrap="truncate">
                 {mod.category}
               </Text>
             </Box>
             <Box flexGrow={1} flexShrink={1}>
-              <Text color={selected ? "white" : "gray"} wrap="truncate">
+              <Text color={selected ? tokens.text : tokens.textMuted} wrap="truncate">
                 {mod.description}
               </Text>
             </Box>
           </Box>
         );
       })}
-      <TopRule />
+      <TopRule tokens={tokens} />
       <Box paddingX={1}>
-        <Text bold color="white">{"SUB-AGENT ROLES"}</Text>
+        <Text bold color={tokens.text}>{"SUB-AGENT ROLES"}</Text>
       </Box>
       <Box paddingX={1}>
         <Text dimColor>{"Worker roles assigned to the swarm "}</Text>
@@ -261,9 +264,9 @@ function renderRufloSubView(props: PluginsTabProps): React.ReactElement {
           return (
             <Box key={role} marginRight={2}>
               <Text
-                color={selected ? "yellow" : on ? "green" : "gray"}
+                color={selected ? tokens.accent : on ? tokens.success : tokens.textMuted}
                 bold={selected}
-                backgroundColor={selected ? "blackBright" : undefined}
+                backgroundColor={selected ? tokens.surface : undefined}
               >
                 {pluginCheckbox(on)} {role}
               </Text>
@@ -271,7 +274,7 @@ function renderRufloSubView(props: PluginsTabProps): React.ReactElement {
           );
         })}
       </Box>
-      <TopRule />
+      <TopRule tokens={tokens} />
       <Box paddingX={1}>
         <Text dimColor>{"Space toggle \u00b7 Esc back"}</Text>
       </Box>

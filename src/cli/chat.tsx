@@ -21,6 +21,7 @@ import { getAllConfiguredModels, type ModelDescriptor } from "../models/model-re
 import { getQuota } from "../models/quota-tracker.js";
 import { ChatUI, type ChatMessage } from "../components/ChatUI.js";
 import { buildSessionSummary } from "./session-summary.js";
+import { ThemeProvider } from "../theme/ThemeContext.js";
 import { clearScreen, patchTtyForFullScreen } from "./screen.js";
 import { MenuScreen } from "../components/MenuScreen.js";
 import { loadAuthSession } from "../auth/index.js";
@@ -63,6 +64,8 @@ export function ChatHost({
   const [isRunning, setIsRunning] = React.useState(false);
   const [turnCount, setTurnCount] = React.useState(0);
   const turnCountRef = React.useRef(0);
+  const loopRef = React.useRef<AgentLoop | null>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
   const [showMenu, setShowMenu] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(initialSettingsOpen === true);
   // --- /models picker state ---
@@ -200,6 +203,31 @@ export function ChatHost({
     setMessages((prev) => fn(prev));
     }, []);
 
+  /**
+   * Called when the user presses Esc during an active run.
+   * Aborts the in-flight HTTP request, resets the running state, and
+   * renders a [CANCELLED] badge in the chat stream.
+   */
+  const onCancel = React.useCallback(() => {
+    const controller = abortControllerRef.current;
+    if (controller) {
+      controller.abort();
+    }
+    setIsRunning(false);
+    abortControllerRef.current = null;
+    mutateMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === "assistant" && last.thinking) {
+        return [...prev.slice(0, -1), { ...last, thinking: false }];
+      }
+      return prev;
+    });
+    mutateMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "[CANCELLED] Operation stopped by user." },
+    ]);
+  }, [mutateMessages]);
+
   const approval = React.useMemo(
     (): ApprovalHandler => ({
       request: async (call: ToolCall, _reason: string) => {
@@ -248,6 +276,14 @@ export function ChatHost({
       turnCountRef.current += 1;
       setTurnCount(turnCountRef.current);
       setIsRunning(true);
+      // Render the thinking placeholder immediately so the user sees progress
+      // before the first provider token arrives (cleared on first token).
+      mutateMessages((prev) => [...prev, { role: "assistant", content: "", thinking: true }]);
+
+      // Abort controller allows Esc / Ctrl+Backspace to cancel the in-flight
+      // HTTP request instead of letting it hang until timeout.
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       const digest = new TaskDigest(input);
       const context = new ContextManager(adapter, digest, { contextWindow: cfg.contextWindow });
@@ -271,6 +307,7 @@ export function ChatHost({
         tools: TOOL_SCHEMAS,
         maxIterations: cfg.maxIterations ?? 40,
         mode,
+        signal: controller.signal,
         onStream: {
           onAssistantText: (text) => {
             mutateMessages((prev) => {
@@ -305,13 +342,43 @@ export function ChatHost({
             });
           },
           onStatus: () => setTurnCount((t) => t),
+          onError: (banner) => {
+            // Clear the thinking placeholder so we don't show a duplicate
+            // spinner alongside the error banner.
+            mutateMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && last.thinking) {
+                return [...prev.slice(0, -1), { ...last, content: "", thinking: false }];
+              }
+              return prev;
+            });
+            mutateMessages((prev) => [
+              ...prev,
+              { role: "assistant", content: banner },
+            ]);
+          },
         },
       });
 
       try {
         await loop.run(input);
+      } catch (err) {
+        // Errors are classified and rendered as banners by the loop's onError
+        // hook; re-throw only for unexpected exceptions we didn't classify.
+        if (err instanceof Error && err.name === "AbortError") {
+          // The request was aborted — onError already fired the banner.
+        }
       } finally {
         setIsRunning(false);
+        abortControllerRef.current = null;
+        // Clear any stale thinking placeholder that wasn't cleared by a token.
+        mutateMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant" && last.thinking) {
+            return [...prev.slice(0, -1), { ...last, thinking: false }];
+          }
+          return prev;
+        });
       }
     },
         [adapter, guard, policy, cfg, mode, approval, mutateMessages],
@@ -358,7 +425,7 @@ export function ChatHost({
       }
       onClear={() => setMessages([])}
       onExit={exitWithSummary}
-      onCancel={exitWithSummary}
+      onCancel={onCancel}
       settingsOpen={settingsOpen}
       settingsInitial={settingsInitial}
       settingsSessionDir={sessionsRef.current?.sessionDir ?? null}
@@ -390,10 +457,16 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
   // Enable terminal mouse tracking so users can select + copy text with the mouse.
   enableMouseTracking();
 
-  const { unmount } = render(React.createElement(ChatHost, { workspace, cfg }), {
-    exitOnCtrlC: false,
-    interactive: true,
-  });
+  const { unmount } = render(
+    React.createElement(ThemeProvider, {
+      workspace,
+      children: React.createElement(ChatHost, { workspace, cfg }),
+    }),
+    {
+      exitOnCtrlC: false,
+      interactive: true,
+    },
+  );
   process.on("SIGINT", () => {
     disableMouseTracking();
     unmount();

@@ -6,6 +6,7 @@ import {
   SETTINGS_MODELS,
   SETTINGS_PROVIDERS,
   SETTINGS_THEMES,
+  THEME_LABELS,
   cycleNext,
   type SettingsDraft,
   type AutoApproveMode,
@@ -30,7 +31,12 @@ import {
 import { PluginsTab, type PluginsSubView } from "./PluginsTab.js";
 import { ProviderModal, PROVIDER_CATALOG, type ProviderCatalogEntry } from "./ProviderModal.js";
 import { ProviderConfigModal, type ProviderConfigModalProps } from "./ProviderConfigModal.js";
-import { saveApiKey, saveBaseUrl } from "../utils/config.js";
+import { ThemeModal } from "./ThemeModal.js";
+import { useTheme } from "../theme/ThemeContext.js";
+import { saveApiKey, saveBaseUrl, readConfigSync } from "../utils/config.js";
+import { getModelsForProvider, type ProbedModel } from "../models/fetch-models.js";
+import { ModelsTab } from "./ModelsTab.js";
+import { PROVIDER_NAMES, formatTokenLimit, prettifyModelId, type ModelDescriptor, DEFAULT_CONTEXT_LIMITS } from "../models/model-registry.js";
 
 export type { SettingsDraft };
 
@@ -143,7 +149,7 @@ function valueFor(row: RowId, draft: SettingsDraft): string {
     case "provider": return providerLabel(draft.provider);
     case "model": return draft.model;
     case "mode": return draft.mode === "plan" ? "Plan" : "Build";
-    case "theme": return draft.theme;
+    case "theme": return THEME_LABELS[draft.theme] ?? draft.theme;
     case "autoApprove": return draft.autoApprove === "off" ? "off" : draft.autoApprove === "writes" ? "writes" : "all";
     case "autoUpdate": return draft.autoUpdate ? "on" : "off";
   }
@@ -166,6 +172,49 @@ function hintFor(row: RowId): string {
   }
 }
 
+interface ModelPickerModalProps {
+  readonly models: readonly ModelDescriptor[];
+  readonly activeModel: string;
+  readonly activeProviderId: string;
+  readonly loading?: boolean;
+  readonly error?: string | null;
+  readonly isActive?: boolean;
+  readonly onCommit: (modelId: string, providerId: string) => void;
+  readonly onClose: () => void;
+}
+
+/** Modal wrapper around ModelsTab for the settings model picker. */
+function ModelPickerModal(props: ModelPickerModalProps): React.ReactElement {
+  const { tokens } = useTheme();
+  return (
+    <Box width="100%" height={20} justifyContent="center" alignItems="center">
+      <Box
+        borderStyle="round"
+        borderColor={tokens.border}
+        flexDirection="column"
+        paddingX={2}
+        paddingY={1}
+        width={78}
+      >
+        <Box justifyContent="space-between" paddingX={1}>
+          <Text bold color={tokens.primary}>Select Model</Text>
+          <Text dimColor>[Esc] Close</Text>
+        </Box>
+        <Box height={1} />
+        <ModelsTab
+          models={props.models}
+          activeModel={props.activeModel}
+          activeProviderId={props.activeProviderId}
+          loading={props.loading}
+          isActive={props.isActive ?? true}
+          onCommit={props.onCommit}
+          onClose={props.onClose}
+        />
+      </Box>
+    </Box>
+  );
+}
+
 /**
  * Polished floating settings overlay. Renders inline above the input bar in
  * ChatUI (never a full-screen takeover). Owns its own `useInput` so typed
@@ -183,9 +232,23 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
   const [providerModalOpen, setProviderModalOpen] = React.useState(false);
   const [configModalOpen, setConfigModalOpen] = React.useState(false);
   const [pendingProvider, setPendingProvider] = React.useState<SettingsProvider | null>(null);
+  const [modelPickerOpen, setModelPickerOpen] = React.useState(false);
+  const [modelPickerModels, setModelPickerModels] = React.useState<ModelDescriptor[]>([]);
+  const [modelPickerLoading, setModelPickerLoading] = React.useState(false);
+  const [modelPickerError, setModelPickerError] = React.useState<string | null>(null);
   const [pluginStats, setPluginStats] = React.useState<PluginStats>(DEFAULT_PLUGIN_STATS);
   const [activeSubView, setActiveSubView] = React.useState<PluginsSubView>("main");
   const [inspectIndex, setInspectIndex] = React.useState(0);
+  /** Interactive theme picker overlay (opened from the Theme row). */
+  const [themeModalOpen, setThemeModalOpen] = React.useState(false);
+  /** Active color tokens + active theme — every Ink color prop below reads from here. */
+  const { tokens, theme } = useTheme();
+
+  // Keep the editable draft aligned with the globally persisted theme so that
+  // saving settings never writes a stale theme id back to disk.
+  React.useEffect(() => {
+    setDraft((d) => (d.theme === theme.id ? d : { ...d, theme: theme.id }));
+  }, [theme.id]);
 
   /** Write plugin state to ~/.toolify/config.json (0600) immediately. */
   const persistPlugins = React.useCallback(
@@ -226,12 +289,40 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
     props.onSave(draftRef.current);
   }, [props]);
 
+  /** Check if a provider has a configured API key (from config.json or env). */
+  function isProviderConfiguredSync(providerId: SettingsProvider, workspace: string): boolean {
+    try {
+      const cfg = readConfigSync();
+      const key = cfg.apiKeys[providerId];
+      if (key && key.trim().length > 0) return true;
+      // Also check environment variables
+      const envVars: Record<string, string> = {
+        anthropic: "ANTHROPIC_API_KEY",
+        openai: "OPENAI_API_KEY",
+        gemini: "GEMINI_API_KEY",
+        groq: "GROQ_API_KEY",
+        openrouter: "OPENROUTER_API_KEY",
+        perplexity: "PERPLEXITY_API_KEY",
+        omniroute: "OMNIROUTE_API_KEY",
+        unoroute: "UNOROUTE_API_KEY",
+        litellm: "LITELLM_API_KEY",
+        ollama: "OLLAMA_API_KEY",
+      };
+      const envVar = envVars[providerId];
+      if (envVar && process.env[envVar]) return true;
+    } catch {
+      // Ignore errors, treat as unconfigured
+    }
+    return false;
+  }
+
   const providerCatalog = React.useMemo(() => {
     return PROVIDER_CATALOG.map((p) => ({
       ...p,
       isCurrent: p.id === draft.provider,
+      isConfigured: isProviderConfiguredSync(p.id, props.workspace),
     }));
-  }, [draft.provider]);
+  }, [draft.provider, props.workspace]);
 
   const onProviderSelect = React.useCallback(
     (provider: SettingsProvider, defaultModel: string) => {
@@ -265,6 +356,73 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
     setConfigModalOpen(false);
   }, []);
 
+  /** Fetch live models for the current provider and open the model picker modal. */
+  const openModelPicker = React.useCallback(async () => {
+    const provider = draft.provider;
+    setModelPickerLoading(true);
+    setModelPickerError(null);
+    setModelPickerModels([]);
+    
+    try {
+      // Resolve API key and base URL for the provider
+      const cfg = readConfigSync();
+      const apiKey = cfg.apiKeys[provider];
+      const baseUrl = cfg.baseUrls[provider];
+      
+      if (!apiKey && provider !== "ollama") {
+        // For providers that need API keys, show fallback models
+        setModelPickerError("No API key configured. Showing fallback models.");
+      }
+      
+      const result = await getModelsForProvider(provider, apiKey ?? "", { baseUrl });
+      
+      // Convert ProbedModel[] to ModelDescriptor[]
+      const defaultLimit = DEFAULT_CONTEXT_LIMITS[provider];
+      const providerName = PROVIDER_NAMES[provider] ?? provider;
+      
+      const descriptors: ModelDescriptor[] = result.models.map((m) => {
+        const hasLiveContext = typeof m.contextTokens === "number" && m.contextTokens > 0;
+        return {
+          id: m.id,
+          displayName: prettifyModelId(m.id),
+          providerId: provider,
+          providerName,
+          contextLimit: hasLiveContext
+            ? formatTokenLimit(m.contextTokens)
+            : defaultLimit
+            ? formatTokenLimit(defaultLimit.tokens)
+            : "N/A",
+          contextLimitEstimate: !hasLiveContext && !!defaultLimit,
+          ...(m.isFree ? { isFree: true } : {}),
+          ...(m.isFallback ? { isFallback: true, fetchedAt: m.fetchedAt } : {}),
+        };
+      });
+      
+      setModelPickerModels(descriptors);
+    } catch (err) {
+      setModelPickerError(err instanceof Error ? err.message : "Failed to fetch models");
+      // Still open with empty list - ModelsTab will show fallback notice
+      setModelPickerModels([]);
+    } finally {
+      setModelPickerLoading(false);
+      setModelPickerOpen(true);
+    }
+  }, [draft.provider, props.workspace]);
+
+  const onModelPickerCommit = React.useCallback(
+    (modelId: string, providerId: string) => {
+      setDraft((d) => ({ ...d, model: modelId, provider: providerId as SettingsProvider }));
+      setModelPickerOpen(false);
+    },
+    [],
+  );
+
+  const onModelPickerClose = React.useCallback(() => {
+    setModelPickerOpen(false);
+    setModelPickerModels([]);
+    setModelPickerError(null);
+  }, []);
+
   function currentRowCount(): number {
     switch (selectedTab) {
       case 0: return GENERAL_ROWS.length;
@@ -277,13 +435,6 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
   }
 
   useInput((ch, key) => {
-    // --- Provider modals: parent keys must stay frozen. Esc/Space/arrows are
-    // consumed by the modal's own handlers; typed/pasted characters belong to
-    // its focused <TextInput>. Without this guard, every keypress would
-    // double-handle (rotating tabs and moving rows behind the overlay).
-    if (providerModalOpen || configModalOpen) {
-      return;
-    }
     // --- Plugins sub-view (tier 2/3): scoped navigation, tab bar hidden ---
     const inPluginsSubView =
       selectedTab === PLUGINS_TAB_INDEX && activeSubView !== "main";
@@ -358,20 +509,21 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
         setProviderModalOpen(true);
         return;
       }
+      if (row === "model") {
+        openModelPicker();
+        return;
+      }
+      if (row === "theme") {
+        setThemeModalOpen(true);
+        return;
+      }
       setDraft((d) => {
         switch (row) {
-          case "model": {
-            const models = SETTINGS_MODELS[d.provider];
-            const next = models.includes(d.model) ? cycleNext(models, d.model) : models[0]!;
-            return { ...d, model: next };
-          }
           case "mode": {
             const next: AgentMode = d.mode === "plan" ? "act" : "plan";
             props.onModeChange?.(next);
             return { ...d, mode: next };
           }
-          case "theme":
-            return { ...d, theme: cycleNext(SETTINGS_THEMES, d.theme) };
           case "autoApprove": {
             const next = cycleNext(AUTO_ORDER, d.autoApprove);
             props.onAutoApproveChange?.(next);
@@ -415,7 +567,7 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
       save();
       return;
     }
-  });
+  }, { isActive: !providerModalOpen && !configModalOpen && !modelPickerOpen && !themeModalOpen });
 
   // Keep the model valid if the provider changes elsewhere mid-session.
   React.useEffect(() => {
@@ -441,7 +593,7 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
         marginBottom={1}
         width="100%"
         justifyContent="space-between"
-        backgroundColor={rowActive ? "cyan" : undefined}
+        backgroundColor={rowActive ? tokens.primary : undefined}
         paddingX={1}
       >
         <Box flexDirection="row">
@@ -483,7 +635,7 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
         marginBottom={1}
         width="100%"
         justifyContent="space-between"
-        backgroundColor={rowActive ? "cyan" : undefined}
+        backgroundColor={rowActive ? tokens.primary : undefined}
         paddingX={1}
       >
         <Box flexDirection="row">
@@ -517,7 +669,7 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
   const renderComingSoon = () => (
     <Box flexDirection="column" justifyContent="center" alignItems="center" paddingY={2}>
       <Box height={1} />
-      <Text bold color="cyan">[ Coming Soon ]</Text>
+      <Text bold color={tokens.primary}>[ Coming Soon ]</Text>
       <Box height={1} />
       <Text dimColor>We are actively working on this feature!</Text>
       <Box height={1} />
@@ -588,17 +740,29 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
           onSelect={onProviderSelect}
           onClose={() => setProviderModalOpen(false)}
         />
+      ) : modelPickerOpen ? (
+        <ModelPickerModal
+          models={modelPickerModels}
+          activeModel={draft.model}
+          activeProviderId={draft.provider}
+          loading={modelPickerLoading}
+          error={modelPickerError}
+          onCommit={onModelPickerCommit}
+          onClose={onModelPickerClose}
+        />
+      ) : themeModalOpen ? (
+        <ThemeModal isOpen={themeModalOpen} onClose={() => setThemeModalOpen(false)} />
       ) : (
       <Box
         borderStyle="round"
-        borderColor="cyan"
+        borderColor={tokens.border}
         flexDirection="column"
         paddingX={2}
         paddingY={1}
         width={78}
       >
         <Box justifyContent="space-between" paddingX={1}>
-          <Text bold color="cyan">
+          <Text bold color={tokens.primary}>
             {selectedTab === PLUGINS_TAB_INDEX && activeSubView !== "main"
               ? "Plugins"
               : "Settings"}
@@ -617,8 +781,8 @@ export function SettingsMenu(props: SettingsMenuProps): React.ReactElement {
             return (
               <Text
                 key={tab}
-                backgroundColor={isActive ? "cyan" : undefined}
-                color={isActive ? "black" : "gray"}
+                backgroundColor={isActive ? tokens.primary : undefined}
+                color={isActive ? tokens.textInverted : tokens.textMuted}
                 bold={isActive}
               >
                 {" "}

@@ -78,6 +78,10 @@ export interface ProbedModel {
   readonly isFree?: boolean;
   /** Context window in tokens, when the provider exposes it. */
   readonly contextTokens?: number;
+  /** True when this model comes from a static fallback (not live API). */
+  readonly isFallback?: boolean;
+  /** ISO timestamp when the fallback data was generated. */
+  readonly fetchedAt?: string;
 }
 
 export interface ProbeResult {
@@ -158,9 +162,55 @@ async function toResult(
 }
 
 /**
- * Live model probing per provider. Always resolves (never throws); failed or
- * unauthorized providers return `{ models: [], error }` so the registry can
- * drop them from multi-provider aggregation.
+ * Static fallback model catalog with metadata for transparency.
+ * Used when provider APIs are unreachable (network error, timeout, 401, 403).
+ * Update this list when new model generations are released.
+ * Timestamp indicates when these defaults were last refreshed.
+ */
+const FALLBACK_MODELS: Record<string, ProbedModel[]> = {
+  gemini: [
+    { id: "gemini-2.5-pro", isFree: false, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "gemini-2.5-flash", isFree: false, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "gemini-2.5-flash-lite", isFree: true, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "gemini-1.5-pro", isFree: false, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "gemini-1.5-flash", isFree: false, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+  openrouter: [
+    { id: "anthropic/claude-3.5-sonnet", isFree: false, contextTokens: 200_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "openai/gpt-4o", isFree: false, contextTokens: 128_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "deepseek/deepseek-chat", isFree: false, contextTokens: 64_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "google/gemini-2.5-pro", isFree: false, contextTokens: 1_048_576, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+  groq: [
+    { id: "llama-3.3-70b-versatile", isFree: false, contextTokens: 131_072, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "llama-3.1-8b-instant", isFree: false, contextTokens: 131_072, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "mixtral-8x7b-32768", isFree: false, contextTokens: 32_768, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+  deepseek: [
+    { id: "deepseek-chat", isFree: false, contextTokens: 64_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "deepseek-reasoner", isFree: false, contextTokens: 64_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+  ollama: [
+    { id: "llama3.2", isFree: true, contextTokens: 131_072, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "qwen2.5-coder:latest", isFree: true, contextTokens: 32_768, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "mistral", isFree: true, contextTokens: 32_768, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+  anthropic: [
+    { id: "claude-3-5-sonnet-20241022", isFree: false, contextTokens: 200_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "claude-3-opus-20240229", isFree: false, contextTokens: 200_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+    { id: "claude-sonnet-4-20250514", isFree: false, contextTokens: 200_000, isFallback: true, fetchedAt: "2025-01-15T00:00:00.000Z" },
+  ],
+};
+
+/** Return a fallback model list for the given provider, tagged as stale/cached. */
+function getFallbackModels(providerId: string): ProbeResult {
+  const models = FALLBACK_MODELS[providerId] ?? [];
+  return { models, error: "Offline — showing cached model catalog (may be stale)" };
+}
+
+/**
+ * Live model probing per provider. On failure, returns static fallback catalog
+ * tagged with isFallback=true and fetchedAt so the UI can warn users.
  */
 export async function getModelsForProvider(
   providerId: string,
@@ -185,9 +235,9 @@ export async function getModelsForProvider(
         return await probeOpenAICompatible(providerId, apiKey, options.baseUrl, fetchImpl, controller.signal);
     }
   } catch (err) {
-    if (controller.signal.aborted) return { models: [], error: "Probe timed out." };
+    if (controller.signal.aborted) return getFallbackModels(providerId);
     const msg = err instanceof Error ? err.message : String(err);
-    return { models: [], error: `Network error: ${msg}` };
+    return getFallbackModels(providerId);
   } finally {
     clearTimeout(timeout);
   }

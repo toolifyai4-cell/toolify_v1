@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { useTheme } from "../theme/ThemeContext.js";
 
 export interface SlashCommand {
   readonly name: string;
@@ -61,6 +62,7 @@ export function CommandMenu({
   selectedIndex,
   pageSize = COMMAND_MENU_PAGE_SIZE,
 }: CommandMenuProps): React.ReactElement | null {
+  const { tokens } = useTheme();
   if (commands.length === 0) return null;
 
   const safeSelected = Math.min(Math.max(selectedIndex, 0), commands.length - 1);
@@ -73,18 +75,18 @@ export function CommandMenu({
   const hiddenCount = commands.length - visible.length;
 
   return (
-    <Box borderStyle="single" borderColor="cyan" flexDirection="column" paddingX={1}>
+    <Box borderStyle="single" borderColor={tokens.border} flexDirection="column" paddingX={1}>
       {visible.map((cmd, i) => {
         const absoluteIndex = start + i;
         const active = absoluteIndex === safeSelected;
         return (
           <Box key={cmd.name} justifyContent="space-between">
             {active ? (
-              <Box flexGrow={1} justifyContent="space-between" backgroundColor="cyan">
-                <Text color="black" bold>
+              <Box flexGrow={1} justifyContent="space-between" backgroundColor={tokens.primary}>
+                <Text color={tokens.textInverted} bold>
                   {`> ${cmd.name}`}
                 </Text>
-                <Text color="black"> {cmd.description}</Text>
+                <Text color={tokens.textInverted}> {cmd.description}</Text>
               </Box>
             ) : (
               <>

@@ -1,6 +1,8 @@
 import React from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { DIM, RESET, GREEN, BLUE_BRIGHT, YELLOW, CYAN, RED } from "./ChatUI.js";
+import { useTheme } from "../theme/ThemeContext.js";
+import { ansi } from "../theme/ansi.js";
 import type { ToolifyConfig } from "../cli/run.js";
 import type { AuthUser } from "../auth/types.js";
 
@@ -31,6 +33,15 @@ function fmtTime(ts: number): string {
 }
 
 export function MenuScreen(props: MenuScreenProps): React.ReactElement {
+// Theme-reactive overrides that SHADOW the static ANSI imports above, so
+  // every `${CYAN}`-style interpolation below repaints with the active theme
+  // while the module-level exports stay intact for other consumers.
+  const { tokens } = useTheme();
+  const CYAN = ansi(tokens.primary);
+  const GREEN = ansi(tokens.success);
+  const YELLOW = ansi(tokens.warning);
+  const RED = ansi(tokens.error);
+  const BLUE_BRIGHT = ansi(tokens.info);
   const [tip, setTip] = React.useState(0);
   const [section, setSection] = React.useState<"home" | "providers" | "history" | "models" | "usage">("home");
   // Ink only sets a WIDTH on the root node, so percentage heights never

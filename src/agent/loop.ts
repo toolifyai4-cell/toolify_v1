@@ -37,14 +37,36 @@ export interface AgentLoopOptions {
   loopDetector: LoopDetector;
   tools: ToolSchema[];
   maxIterations: number;
-  /** Read-only tools exposed in Plan mode; full tools in Act mode (Cline parity). */
+  /**
+   * Wall-clock budget for one `adapter.chat()` call (default 30s).
+   * Fires `AgentTimeoutError` so a hung provider can never freeze the TUI.
+   */
+  modelTimeoutMs?: number;
+  /**
+   * Execution mode (Cline parity): Plan = read-only tools only; Act = full tools.
+   */
   mode: AgentMode;
-  /** Live-streamed stream callbacks so the TUI can render incrementally. */
+  /**
+   * Optional abort signal from the TUI's AbortController. When aborted,
+   * the in-flight HTTP request is cancelled and the loop exits on the next
+   * iteration check with reason "aborted".
+   */
+  signal?: AbortSignal;
+  /**
+   * Live-streamed stream callbacks so the TUI can render incrementally.
+   */
   onStream?: {
     onAssistantText?: (delta: string) => void;
     onToolStart?: (call: ToolCall) => void;
     onToolResult?: (callId: string, result: string, isError: boolean) => void;
     onStatus?: (status: { inputTokens: number; outputTokens: number; costUsd: number }) => void;
+    /** Fired once per model turn when the first token arrives. */
+    onFirstToken?: () => void;
+    /**
+     * Fired when the run fails with a parsed, user-friendly error banner.
+     * The TUI renders this as a colored error box in the chat stream.
+     */
+    onError?: (banner: string, kind: "error" | "timeout") => void;
   };
 }
 
@@ -54,6 +76,49 @@ export interface AgentRunResult {
   verificationRounds: number;
 }
 
+
+/**
+ * Wrap a promise with a wall-clock timeout.
+ *
+ * When the timer fires first the caller sees an `AgentTimeoutError` whose
+ * message names the timed-out operation; when the work finishes first the
+ * timer is cleared and the result passes through untouched.
+ */
+export class AgentTimeoutError extends Error {
+  readonly operation: string;
+  readonly timeoutMs: number;
+  constructor(operation: string, timeoutMs: number) {
+    super(`${operation} timed out after ${Math.round(timeoutMs / 1000)}s`);
+    this.name = "AgentTimeoutError";
+    this.operation = operation;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  operation: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AgentTimeoutError(operation, timeoutMs)), timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([work, guard]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+export const DEFAULT_MODEL_TIMEOUT_MS = 30_000;
+
+/**
+ * Short human label for the active adapter used in error/timeout messages.
+ * Prefers `name` when the adapter exposes one, else falls back to its model id.
+ */
+function adapterLabel(o: Pick<AgentLoopOptions, "adapter">): string {
+  return o.adapter.name || o.adapter.modelId || "model";
+}
 
 const TOOL_TARGET_KEYS = ["path", "pattern", "command"] as const;
 
@@ -75,16 +140,122 @@ function toolTarget(input: unknown): string | undefined {
  *   → proactive compaction → results appended → repeat
  *   → verification gate MUST pass before a successful finish.
  */
+/** Parse a thrown error into a categorized, user-friendly banner + severity kind. */
+function classifyAgentError(
+  err: unknown,
+  modelLabel: string,
+  baseURL?: string,
+): { banner: string; kind: "error" | "timeout" } {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+
+  // 1. Context window exceeded.
+  if (
+    lower.includes("context_length_exceeded") ||
+    lower.includes("max_tokens") ||
+    lower.includes("token limit") ||
+    lower.includes("context window") ||
+    lower.includes("context_length")
+  ) {
+    return {
+      banner: `[ERROR] Context limit reached: The conversation history exceeds the model's maximum context window. Clear chat history (/clear) or switch to a higher-context model.`,
+      kind: "error",
+    };
+  }
+
+  // 2. Authentication / invalid API key.
+  if (
+    lower.includes("invalid_api_key") ||
+    lower.includes("unauthorized") ||
+    lower.includes("authentication") ||
+    msg.startsWith("Provider error 401") ||
+    msg.startsWith("Provider error 403")
+  ) {
+    return {
+      banner: `[ERROR] Authentication failed: Invalid or missing API key for target provider. Check your key in provider settings.`,
+      kind: "error",
+    };
+  }
+
+  // 3. Rate limited / quota exceeded.
+  if (
+    lower.includes("rate_limit") ||
+    lower.includes("rate limit") ||
+    lower.includes("quota_exceeded") ||
+    lower.includes("quota exceeded") ||
+    msg.startsWith("Provider error 429")
+  ) {
+    return {
+      banner: `[ERROR] Rate limit reached: Request limit or quota exceeded for this provider/model. Please wait or switch models.`,
+      kind: "error",
+    };
+  }
+
+  // 4. Network / connection failure.
+  if (
+    lower.includes("fetch failed") ||
+    lower.includes("enotfound") ||
+    lower.includes("econnrefused") ||
+    lower.includes("econnaborted") ||
+    lower.includes("network") ||
+    lower.includes("connection") ||
+    lower.includes("reset") ||
+    msg.startsWith("Provider error 50") ||
+    msg.startsWith("Provider error 59")
+  ) {
+    const url = baseURL ?? "the configured endpoint";
+    return {
+      banner: `[ERROR] Connection failed: Unable to reach the configured Base URL (${url}). Verify network connection or provider endpoint settings.`,
+      kind: "error",
+    };
+  }
+
+  // 5. Timeout.
+  if (err instanceof AgentTimeoutError) {
+    return {
+      banner: `[TIMEOUT] Request timed out after ${Math.round((err as AgentTimeoutError).timeoutMs / 1000)}s with no response from ${modelLabel}.`,
+      kind: "timeout",
+    };
+  }
+
+  // Fallback: generic error.
+  return {
+    banner: `[ERROR] ${msg.split("\n")[0].slice(0, 300)}`,
+    kind: "error",
+  };
+}
+
 export class AgentLoop {
+  private aborted = false;
   constructor(private readonly opts: AgentLoopOptions) {}
+
+  /** Abort the current run. Safe to call from outside the loop. */
+  abort(): void {
+    this.aborted = true;
+    // The caller (TUI) holds the AbortController and calls controller.abort()
+    // directly; the loop only tracks the aborted flag for its iteration checks.
+  }
 
   private systemPrompt(): string {
     return [
-      "You are TOOLIFY, an autonomous coding agent working in a workspace.",
-      "Use the provided tools to read, write, edit, search, and run commands.",
-      "Work step by step. Prefer edit_file for small changes, write_file for new files.",
-      "Finish with a clear final message when the goal is achieved.",
+      "You are TOOLIFY, an AI coding agent running inside an Ink TUI.",
       "",
+      "## Core Rules",
+      "1. ALWAYS provide a direct text answer to the user's question directly in the chat stream.",
+      "2. ALWAYS provide a clear, concise final summary of all actions taken (files modified, tools executed, tests run) at the end of every task execution.",
+      "3. When executing tools, do not suppress conversational text output - stream your thinking process alongside tool execution.",
+      "4. At the end of tool execution runs, force a standard completion block containing:",
+      "   - Direct answer / solution.",
+      "   - Action Summary (e.g., '### Actions Taken', listing modified files and status).",
+      "5. Use the provided tools to read, write, and edit files in the workspace.",
+      "6. Verify your changes by running tests and type checking before declaring completion.",
+      "",
+      "## Plan & Build Execution Guidelines",
+      "In PLAN MODE: analyze requirements, propose architecture, and deliver a step-by-step plan. Do NOT modify files.",
+      "In BUILD MODE: implement the plan, run verification (tsc + tests), and report results.",
+      "Before declaring task completion, strictly adhere to these guidelines and verify all changes.",
+      "",
+      "## Task Digest (pinned)",
       this.opts.digest.render(),
     ].join("\n");
   }
@@ -108,10 +279,18 @@ export class AgentLoop {
       let done = false;
 
       while (!done && verificationRounds <= o.verification.config.maxRounds) {
+        if (this.aborted) {
+          await this.emit({ type: "run_finished", reason: "aborted" as never, ts: Date.now() });
+          return { finishReason: "aborted", iterations, verificationRounds };
+        }
         let iteration = 0;
         let modelDone = false;
 
         while (iteration < o.maxIterations) {
+          if (this.aborted) {
+            await this.emit({ type: "run_finished", reason: "aborted" as never, ts: Date.now() });
+            return { finishReason: "aborted", iterations, verificationRounds };
+          }
           // Proactive compaction (R1) with the pinned digest (R6).
           const comp = await o.context.maybeCompact(messages);
           if (comp.didCompact) {
@@ -128,11 +307,16 @@ export class AgentLoop {
             : messages;
           feedback = null;
 
-          const res = await o.adapter.chat({
-            system: this.systemPrompt(),
-            messages: requestMessages,
-            tools: o.tools,
-          });
+          const res = await withTimeout(
+            o.adapter.chat({
+              system: this.systemPrompt(),
+              messages: requestMessages,
+              tools: o.tools,
+              signal: o.signal,
+            }),
+            o.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS,
+            `model call (${adapterLabel(o)})`,
+          );
 
           const { usage, costUsd } = o.meter.add(res.usage);
           await this.emit({ type: "usage_update", usage, costUsd, ts: Date.now() });
@@ -145,6 +329,7 @@ export class AgentLoop {
               ts: Date.now(),
             });
                         // Stream assistant text live to the TUI (Cline renders markdown as it streams).
+            o.onStream?.onFirstToken?.();
             o.onStream?.onAssistantText?.(res.text);
             o.onStream?.onStatus?.({
               inputTokens: o.meter.usage.inputTokens,
@@ -240,9 +425,17 @@ export class AgentLoop {
         break;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await this.emit({ type: "error", message: msg, ts: Date.now() });
-      finishReason = "error";
+      // If the run was aborted (Esc / Ctrl+C), don't show an error banner.
+      if (o.signal?.aborted) {
+        finishReason = "aborted";
+        await this.emit({ type: "error", message: "Run cancelled by user.", ts: Date.now() });
+      } else {
+        const label = adapterLabel(o);
+        const classification = classifyAgentError(err, label, undefined);
+        await this.emit({ type: "error", message: classification.banner, ts: Date.now() });
+        o.onStream?.onError?.(classification.banner, classification.kind);
+        finishReason = "error";
+      }
     }
 
     await this.emit({

@@ -8,6 +8,7 @@ import {
   type VerifyKeyOptions,
   type VerifyKeyResult,
 } from "../models/verify-key.js";
+import { useTheme } from "../theme/ThemeContext.js";
 
 export interface ProviderConfigModalProps {
   readonly providerId: SettingsProvider;
@@ -39,6 +40,7 @@ export interface ProviderConfigModalProps {
 const STEP_LABELS = ["Link & Guidance", "Enter Key", "Verify & Save"];
 
 export const ProviderConfigModal = (props: ProviderConfigModalProps) => {
+  const { tokens } = useTheme();
   const [step, setStep] = React.useState(props.initialStep ?? 0);
   const [apiKey, setApiKey] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
@@ -151,14 +153,14 @@ export const ProviderConfigModal = (props: ProviderConfigModalProps) => {
     <Box width="100%" height={20} justifyContent="center" alignItems="center">
       <Box
         borderStyle="round"
-        borderColor="cyan"
+        borderColor={tokens.border}
         flexDirection="column"
         paddingX={2}
         paddingY={1}
         width={72}
       >
         <Box justifyContent="space-between" paddingX={1}>
-          <Text bold color="cyan">{props.providerName} Configuration</Text>
+          <Text bold color={tokens.primary}>{props.providerName} Configuration</Text>
           <Text dimColor>[Esc] Back</Text>
         </Box>
         <Box height={1} />
@@ -182,7 +184,7 @@ export const ProviderConfigModal = (props: ProviderConfigModalProps) => {
           <Box flexDirection="column" paddingX={1}>
             <Text>{props.guidanceText}</Text>
             <Box height={1} />
-            <Text underline color="cyan">Obtain key at: {props.obtainUrl}</Text>
+            <Text underline color={tokens.primary}>Obtain key at: {props.obtainUrl}</Text>
             <Box height={1} />
             <Text dimColor>Press Enter to continue.</Text>
           </Box>
@@ -251,7 +253,7 @@ export const ProviderConfigModal = (props: ProviderConfigModalProps) => {
             <Box height={2} />
             {status === "verifying" && (
               <Box alignItems="center">
-                <Text color="cyan">
+                <Text color={tokens.primary}>
                   <Spinner type="dots" />
                 </Text>
                 <Text>  Verifying API key with provider endpoint...</Text>

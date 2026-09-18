@@ -1,4 +1,6 @@
-import type { AgentMode } from "../agent/types.js";
+﻿import type { AgentMode } from "../agent/types.js";
+import type { Theme, ThemeTokens } from "../agent/types.js";
+import { THEME_IDS, DEFAULT_THEME_ID } from "../agent/types.js";
 import type { ToolifyConfig } from "../cli/run.js";
 
 /** Providers the settings overlay can cycle through. */
@@ -18,28 +20,34 @@ export const SETTINGS_PROVIDERS = [
 export type SettingsProvider = (typeof SETTINGS_PROVIDERS)[number];
 
 /** Themes the settings overlay can cycle through (display-only for now). */
-export const SETTINGS_THEMES = [
-  "Toolify Dark",
-  "Light",
-  "Monochrome",
-] as const;
+export const SETTINGS_THEMES = THEME_IDS as readonly string[];
 
+/** The current theme, stored as an ID string in config.json. */
 export type SettingsTheme = (typeof SETTINGS_THEMES)[number];
+
+/** Map theme ID → human-readable label for the Settings UI. */
+export const THEME_LABELS: Record<string, string> = {
+  "toolify-dark": "Toolify Dark",
+  "monochrome": "Monochrome",
+  "matrix": "Matrix",
+  "dracula": "Dracula",
+};
 
 /**
  * Representative models per provider shown in the settings overlay.
  * Kept in sync with `OnboardingWizard.tsx` PROVIDERS where they overlap.
+ * Static defaults â€” subject to API provider drift.
  */
 export const SETTINGS_MODELS: Record<SettingsProvider, readonly string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
   anthropic: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-sonnet-4-20250514"],
-  gemini: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
   groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
   ollama: ["llama3.1", "llama3.2", "codellama", "mistral", "qwen2.5-coder", "deepseek-coder-v2"],
-  openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o", "google/gemini-1.5-pro"],
+  openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o", "google/gemini-2.5-pro"],
   litellm: ["auto", "gpt-4o", "claude-3-5-sonnet-20241022"],
   omniroute: ["auto", "gpt-4o", "claude-3-5-sonnet-20241022"],
-  unoroute: ["auto", "gpt-4o", "gemini-1.5-pro"],
+  unoroute: ["auto", "gpt-4o", "gemini-2.5-pro"],
   perplexity: ["sonar-pro", "sonar", "sonar-pro-online", "sonar-deep-research"],
 };
 
@@ -62,7 +70,7 @@ export function defaultSettingsTheme(value: unknown): SettingsTheme {
   return typeof value === "string" &&
     (SETTINGS_THEMES as readonly string[]).includes(value)
     ? (value as SettingsTheme)
-    : "Toolify Dark";
+    : DEFAULT_THEME_ID;
 }
 
 /** Normalize any stored provider to one the overlay can display. */
@@ -287,3 +295,5 @@ function copyBooleanMap(value: unknown): Record<string, boolean> | undefined {
 export function togglePlugin(plugins: PluginSettings, id: PluginId): PluginSettings {
   return { ...plugins, [id]: !plugins[id] };
 }
+
+
