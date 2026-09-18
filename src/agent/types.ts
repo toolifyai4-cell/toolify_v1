@@ -67,6 +67,7 @@ export interface ChatResponse {
   toolCalls: ToolCall[];
   usage: Usage;
   finishReason: FinishReason;
+  providerId?: string;
 }
 
 export interface ModelAdapter {

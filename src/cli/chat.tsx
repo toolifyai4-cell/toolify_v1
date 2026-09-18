@@ -13,6 +13,12 @@ import { CheckpointStore } from "../checkpoint/store.js";
 import { VerificationGate } from "../verify/gate.js";
 import type { ToolifyConfig } from "./run.js";
 import { createAdapter } from "./run.js";
+import { saveConfig } from "./run.js";
+import { applyDraftToConfig, draftFromParts } from "../components/settings.js";
+import { loadGlobalPlugins } from "../components/plugins.js";
+import type { SettingsDraft } from "../components/settings.js";
+import { getAllConfiguredModels, type ModelDescriptor } from "../models/model-registry.js";
+import { getQuota } from "../models/quota-tracker.js";
 import { ChatUI, type ChatMessage } from "../components/ChatUI.js";
 import { buildSessionSummary } from "./session-summary.js";
 import { clearScreen, patchTtyForFullScreen } from "./screen.js";
@@ -33,13 +39,16 @@ const AUTO_ORDER: AutoApproveMode[] = ["off", "writes", "all"];
 export function ChatHost({
   workspace,
   cfg,
+  initialSettingsOpen,
 }: {
   workspace: string;
   cfg: ToolifyConfig;
+  initialSettingsOpen?: boolean;
 }): React.ReactElement {
-  const adapter = React.useMemo(() => createAdapter(cfg), [cfg]);
+  const [liveCfg, setLiveCfg] = React.useState<ToolifyConfig>(cfg);
+  const adapter = React.useMemo(() => createAdapter(liveCfg, workspace), [liveCfg, workspace]);
   const guard = React.useMemo(() => new PathGuard(workspace), [workspace]);
-  const policy = React.useMemo(() => new PolicyEngine(cfg.policy ?? {}), [cfg]);
+  const policy = React.useMemo(() => new PolicyEngine(liveCfg.policy ?? {}), [liveCfg]);
   const meterRef = React.useRef<CostMeter | null>(null);
   if (meterRef.current === null) meterRef.current = new CostMeter(adapter.pricing);
   const sessionsRef = React.useRef<SessionStore | null>(null);
@@ -55,6 +64,47 @@ export function ChatHost({
   const [turnCount, setTurnCount] = React.useState(0);
   const turnCountRef = React.useRef(0);
   const [showMenu, setShowMenu] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(initialSettingsOpen === true);
+  // --- /models picker state ---
+  const [modelsOpen, setModelsOpen] = React.useState(false);
+  const [modelsList, setModelsList] = React.useState<ModelDescriptor[] | null>(null);
+  const [modelsLoading, setModelsLoading] = React.useState(false);
+
+  // --- Quota state (read from getQuota() per current model/provider) ---
+  const quota = React.useMemo(() =>
+    getQuota(liveCfg.provider, liveCfg.model) ?? null,
+  [liveCfg.provider, liveCfg.model]);
+
+  const openModels = React.useCallback(() => {
+    setModelsOpen(true);
+    setModelsLoading(true);
+    setModelsList(null);
+    void getAllConfiguredModels().then(
+      (list) => setModelsList(list),
+      () => setModelsList([]),
+    ).finally(() => setModelsLoading(false));
+  }, []);
+
+  const closeModels = React.useCallback(() => setModelsOpen(false), []);
+
+  const commitModel = React.useCallback(
+    (model: string, providerId: string) => {
+      setLiveCfg((prev) => {
+        const next: ToolifyConfig = {
+          ...prev,
+          model,
+          provider: providerId as ToolifyConfig["provider"],
+        };
+        // Persist the active model + provider to the workspace config the
+        // app loads at startup (the global store keeps credentials only).
+        void saveConfig(workspace, next).catch(() => {});
+        return next;
+      });
+      setModelsOpen(false);
+    },
+    [workspace],
+  );
+
   const startedAtRef = React.useRef<number>(Date.now());
 
   const session = React.useMemo(() => loadAuthSession(workspace), [workspace]);
@@ -98,6 +148,20 @@ export function ChatHost({
 
   const { exit } = useApp();
 
+  const settingsInitial: SettingsDraft = React.useMemo(
+    () => draftFromParts({
+      provider: liveCfg.provider,
+      model: liveCfg.model,
+      mode,
+      theme: liveCfg.theme,
+      autoApprove,
+      autoUpdate: liveCfg.autoUpdate,
+      // Plugin state is global (~/.toolify/config.json), not per-workspace.
+      plugins: loadGlobalPlugins(),
+    }),
+    [liveCfg.provider, liveCfg.model, liveCfg.theme, liveCfg.autoUpdate, mode, autoApprove],
+  );
+
   const exitWithSummary = React.useCallback(() => {
     const meter = meterRef.current;
     const summary = buildSessionSummary({
@@ -122,6 +186,15 @@ export function ChatHost({
     process.on("SIGINT", onSigint);
     return () => { process.off("SIGINT", onSigint); };
   }, [exitWithSummary]);
+
+  const saveSettings = React.useCallback((draft: SettingsDraft) => {
+    const next = applyDraftToConfig(liveCfg, draft);
+    setLiveCfg(next);
+    setMode(draft.mode);
+    setAutoApprove(draft.autoApprove);
+    setSettingsOpen(false);
+    void saveConfig(workspace, next).catch(() => {});
+  }, [liveCfg, workspace]);
 
   const mutateMessages = React.useCallback((fn: (prev: ChatMessage[]) => ChatMessage[]) => {
     setMessages((prev) => fn(prev));
@@ -165,7 +238,9 @@ export function ChatHost({
             content: history.length === 0 ? "No history yet." : history.slice(-10).map((h) => `${h.role}: ${h.preview}`).join("\n"),
           }]);
         }
-        else if (cmd === "/" || cmd === "/menu" || cmd === "/settings" || cmd === "/model" || cmd === "/theme" || cmd === "/account") setShowMenu(true);
+        else if (cmd === "/settings") setSettingsOpen(true);
+        else if (cmd === "/model" || cmd === "/models") openModels();
+        else if (cmd === "/" || cmd === "/menu" || cmd === "/theme" || cmd === "/account") setShowMenu(true);
         return;
       }
 
@@ -251,7 +326,6 @@ export function ChatHost({
         usage={{
           inputTokens: meterRef.current.usage.inputTokens,
           outputTokens: meterRef.current.usage.outputTokens,
-          costUsd: meterRef.current.costUsd,
         }}
         history={history}
         onEnter={() => setShowMenu(false)}
@@ -264,11 +338,14 @@ export function ChatHost({
     <ChatUI
       messages={messages}
       status={{
-        model: cfg.model,
+        model: liveCfg.model,
         inputTokens: meterRef.current.usage.inputTokens,
         outputTokens: meterRef.current.usage.outputTokens,
-        costUsd: meterRef.current.costUsd,
         turnCount,
+        remainingTokens: quota?.remainingTokens,
+        limitTokens: quota?.limitTokens,
+        isExhausted: quota?.isExhausted ?? false,
+        resetTime: quota?.resetTime,
       }}
       mode={mode}
       autoApprove={autoApprove}
@@ -282,6 +359,23 @@ export function ChatHost({
       onClear={() => setMessages([])}
       onExit={exitWithSummary}
       onCancel={exitWithSummary}
+      settingsOpen={settingsOpen}
+      settingsInitial={settingsInitial}
+      settingsSessionDir={sessionsRef.current?.sessionDir ?? null}
+      settingsUsage={{
+        inputTokens: meterRef.current.usage.inputTokens,
+        outputTokens: meterRef.current.usage.outputTokens,
+      }}
+      onSettingsSave={saveSettings}
+      onSettingsModeChange={setMode}
+      onSettingsAutoApproveChange={setAutoApprove}
+      modelsOpen={modelsOpen}
+      models={modelsList}
+      modelsLoading={modelsLoading}
+      activeModel={liveCfg.model}
+      activeProviderId={liveCfg.provider}
+      onModelsCommit={commitModel}
+      onModelsClose={closeModels}
     />
     );
 }
@@ -293,15 +387,31 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
   patchTtyForFullScreen();
   // Wipe the entry flow's final frame so the chat starts on a clean screen.
   clearScreen();
+  // Enable terminal mouse tracking so users can select + copy text with the mouse.
+  enableMouseTracking();
 
   const { unmount } = render(React.createElement(ChatHost, { workspace, cfg }), {
     exitOnCtrlC: false,
     interactive: true,
   });
   process.on("SIGINT", () => {
+    disableMouseTracking();
     unmount();
     process.exit(0);
   });
+  process.on("exit", () => {
+    disableMouseTracking();
+  });
+}
+
+/** Enable terminal mouse tracking (allows mouse-based text selection + copy). */
+export function enableMouseTracking(): void {
+  process.stdout.write("\x1b[?1000h\x1b[?1006h");
+}
+
+/** Disable terminal mouse tracking (restore normal terminal behavior). */
+export function disableMouseTracking(): void {
+  try { process.stdout.write("\x1b[?1000l\x1b[?1006l"); } catch { /* ignore */ }
 }
 
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveApiKeySync, resolveBaseUrlSync } from "../utils/config.js";
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
@@ -27,7 +28,9 @@ import type { AuthProviderId } from "../auth/types.js";
 
 
 export interface ToolifyConfig {
-  provider: "openai" | "deepseek" | "anthropic" | "openrouter" | "omniroute" | "unoroute" | "ollama" | "litellm" | "gemini" | "mock";
+  provider: "openai" | "deepseek" | "anthropic" | "openrouter" | "omniroute" | "unoroute" | "ollama" | "litellm" | "gemini" | "groq" | "perplexity" | "mock";
+  theme?: string;
+  autoUpdate?: boolean;
   baseUrl?: string;
   apiKey?: string;
   model: string;
@@ -49,22 +52,57 @@ export async function loadConfig(workspace: string): Promise<ToolifyConfig> {
   }
 }
 
-export function createAdapter(cfg: ToolifyConfig): ModelAdapter {
-  if (cfg.provider === "anthropic") {
-    const apiKey = cfg.apiKey ?? process.env.ANTHROPIC_API_KEY;
+export function createAdapter(cfg: ToolifyConfig, workspace: string): ModelAdapter {
+  const provider = cfg.provider;
+  const apiKey = resolveApiKeySync(provider, workspace) ?? cfg.apiKey;
+  const baseUrl = resolveBaseUrlSync(provider, workspace) ?? cfg.baseUrl;
+
+  if (provider === "anthropic") {
     if (!apiKey) {
-      throw new Error("anthropic provider requires an API key (config or ANTHROPIC_API_KEY)");
+      console.warn(
+        "[toolify] anthropic provider requires an API key (config or ANTHROPIC_API_KEY) — falling back to mock adapter",
+      );
+      return new MockModelAdapter([
+        {
+          text: "Set ANTHROPIC_API_KEY or switch provider in /settings to use a real model.",
+          finishReason: "stop" as const,
+        },
+      ]);
     }
     return new AnthropicAdapter({ apiKey, model: cfg.model, pricing: cfg.pricing });
   }
-  if (cfg.provider === "mock") {
+  if (provider === "mock") {
     return new MockModelAdapter([
       { text: "Mock turn: hello from the scripted adapter!", finishReason: "stop" as const },
     ]);
   }
-  const baseUrl = cfg.baseUrl ?? process.env.OPENAI_BASE_URL ?? "http://localhost:11434/v1";
-  const apiKey = cfg.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.OPENROUTER_API_KEY;
-  return new OpenAICompatibleAdapter({ baseUrl, apiKey, model: cfg.model, pricing: cfg.pricing });
+  if (provider === "perplexity") {
+    if (!apiKey) {
+      console.warn(
+        "[toolify] perplexity provider requires an API key (config or PERPLEXITY_API_KEY) — falling back to mock adapter",
+      );
+      return new MockModelAdapter([
+        {
+          text: "Set PERPLEXITY_API_KEY or switch provider in /settings to use a real model.",
+          finishReason: "stop" as const,
+        },
+      ]);
+    }
+    return new OpenAICompatibleAdapter({
+      baseUrl: baseUrl ?? "https://api.perplexity.ai",
+      apiKey,
+      model: cfg.model,
+      pricing: cfg.pricing,
+      providerId: provider,
+    });
+  }
+  return new OpenAICompatibleAdapter({
+    baseUrl: baseUrl ?? "http://localhost:11434/v1",
+    apiKey,
+    model: cfg.model,
+    pricing: cfg.pricing,
+    providerId: provider,
+  });
 }
 
 export function isConfigComplete(cfg: Partial<ToolifyConfig> | null | undefined): cfg is ToolifyConfig {
@@ -230,7 +268,7 @@ export function buildProgram(): Command {
     .action(async (goal: string, opts) => {
       const workspace = resolve(opts.workspace);
       const cfg = await loadConfig(workspace);
-      const adapter = createAdapter(cfg);
+      const adapter = createAdapter(cfg, workspace);
       const guard = new PathGuard(workspace);
       const policy = new PolicyEngine(cfg.policy ?? {});
       const digest = new TaskDigest(goal);

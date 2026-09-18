@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import Spinner from "ink-spinner";
+import TextInput from "ink-text-input";
 import { DIM, GREEN, RED, RESET, YELLOW, CYAN, BLUE_BRIGHT } from "./ChatUI.js";
 import type { AuthProviderId } from "../auth/types.js";
 import type { ToolifyConfig } from "../cli/run.js";
@@ -90,11 +91,25 @@ const PROVIDERS: Record<ToolifyConfig["provider"], ProviderInfo> = {
     models: ["gpt-4o", "claude-3-5-sonnet", "gemini-pro", "llama3.1"],
     needsApiKey: false,
   },
+  groq: {
+    label: "Groq",
+    description: "Fast inference on open models",
+    defaultBaseUrl: "https://groq.com/v1",
+    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    needsApiKey: true,
+  },
   gemini: {
     label: "Google Gemini",
     description: "Gemini Pro, Gemini Flash, Gemini 2.0",
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
     models: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"],
+    needsApiKey: true,
+  },
+  perplexity: {
+    label: "Perplexity AI",
+    description: "Web-search LLM with real-time answers",
+    defaultBaseUrl: "https://api.perplexity.ai",
+    models: ["sonar-pro", "sonar", "sonar-pro-online", "sonar-deep-research"],
     needsApiKey: true,
   },
   mock: {
@@ -134,14 +149,19 @@ export function OnboardingWizard({
   const [fetchedModels, setFetchedModels] = React.useState<string[] | null>(null);
   const [fetchError, setFetchError] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<string>("");
-  const [blink, setBlink] = React.useState(true);
 
-  // Blink cursor on the apikey step
-  React.useEffect(() => {
-    if (step.name !== "apikey") return;
-    const t = setInterval(() => setBlink((b) => !b), 500);
-    return () => clearInterval(t);
-  }, [step.name]);
+  const submitKey = React.useCallback(() => {
+    const val = draft.trim();
+    if (!val) {
+      setFetchError("API key is required");
+      return;
+    }
+    setApiKey(val);
+    setDraft("");
+    setFetchError(null);
+    setFetchedModels(null);
+    setStep({ name: "fetching", provider });
+  }, [draft, provider]);
 
   useInput((ch, key) => {
     if (key.escape) {
@@ -170,25 +190,12 @@ export function OnboardingWizard({
     }
     if (step.name === "apikey") {
       if (key.return) {
-        const val = draft.trim();
-        if (!val) {
-          setFetchError("API key is required");
-          return;
-        }
-        setApiKey(val);
-        setDraft("");
-        setFetchError(null);
-        setFetchedModels(null);
-        setStep({ name: "fetching", provider });
+        submitKey();
         return;
       }
-      if (key.delete || key.backspace) {
-        setDraft((d) => d.slice(0, -1));
-        return;
-      }
-      if (typeof ch === "string" && ch.length >= 1 && !key.ctrl && !key.meta && !key.return) {
-        setDraft((d) => d + ch);
-      }
+      // Printable input (single keys AND multi-character terminal paste
+      // buffers) is forwarded to the focused <TextInput>; nothing is
+      // consumed here so the native component never misses buffered data.
       return;
     }
   });
@@ -379,10 +386,15 @@ export function OnboardingWizard({
               <Text>{`${RED}⚠ ${fetchError}${RESET}`}</Text>
             </Box>
           )}
-          <Box alignItems="center">
+          <Box>
             <Text>{YELLOW}Key:{RESET} </Text>
-            <Text>{draft || " "}</Text>
-            <Text>{blink ? `${CYAN}█${RESET}` : " "}</Text>
+            <TextInput
+              focus={true}
+              value={draft}
+              onChange={setDraft}
+              mask="•"
+              placeholder="Paste your API key here..."
+            />
           </Box>
           <Box marginTop={1}>
             <Text>{`${DIM}Enter = continue · Esc = back${RESET}`}</Text>

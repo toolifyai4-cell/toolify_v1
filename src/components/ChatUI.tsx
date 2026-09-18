@@ -2,6 +2,10 @@ import React from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
+import { SettingsMenu } from "./SettingsMenu.js";
+import { ModelsTab } from "./ModelsTab.js";
+import type { ModelDescriptor } from "../models/model-registry.js";
+import type { SettingsDraft } from "./settings.js";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -14,8 +18,15 @@ export interface StatusInfo {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  costUsd: number;
   turnCount: number;
+  /** Current provider's remaining token quota (from last response headers). */
+  remainingTokens?: number;
+  /** Provider token limit (from last response headers). */
+  limitTokens?: number;
+  /** Whether the current provider/model is rate-limited / exhausted. */
+  isExhausted?: boolean;
+  /** Reset countdown string (e.g. "45s", "3m"). */
+  resetTime?: string;
 }
 
 export interface ChatUIProps {
@@ -31,6 +42,31 @@ export interface ChatUIProps {
   onClear: () => void;
   onExit: () => void;
   onCancel: () => void;
+  /** When true the settings overlay owns the screen (hides prompt). */
+  readonly settingsOpen?: boolean;
+  /** Live settings snapshot shown in the overlay. */
+  readonly settingsInitial?: SettingsDraft;
+  /** Esc in the overlay: persist draft to .toolify/config.json + close. */
+  readonly onSettingsSave?: (draft: SettingsDraft) => void;
+  /** Live sync: Mode toggled inside the settings overlay. */
+  readonly onSettingsModeChange?: (mode: AgentMode) => void;
+  /** Live sync: Auto-Approve cycled inside the settings overlay. */
+  readonly onSettingsAutoApproveChange?: (autoApprove: "off" | "writes" | "all") => void;
+  /** Session dir (events.jsonl) feeding live Ponytail metrics. */
+  readonly settingsSessionDir?: string | null;
+  /** Live token totals used by the Plugins tab metric fallback. */
+  readonly settingsUsage?: { readonly inputTokens: number; readonly outputTokens: number };
+  /** When true the /models picker overlay owns the screen. */
+  readonly modelsOpen?: boolean;
+  /** Aggregated models from all configured providers (null while probing). */
+  readonly models?: readonly ModelDescriptor[] | null;
+  readonly modelsLoading?: boolean;
+  readonly activeModel?: string;
+  readonly activeProviderId?: string;
+  /** Enter in the picker: persist model+provider and close. */
+  readonly onModelsCommit?: (modelId: string, providerId: string) => void;
+  /** Esc in the picker: close without saving. */
+  readonly onModelsClose?: () => void;
 }
 
 export const DIM = "\x1b[2m";
@@ -46,6 +82,15 @@ export const RESET = "\x1b[0m";
 /** Round mode markers. Written as escapes so this source file stays pure ASCII. */
 export const BALL_ACTIVE = "\u25cf";
 export const BALL_IDLE = "\u25cb";
+
+/** Compact token-count label: 1_500_000 -> "1.5M", 150_000 -> "150K", 42 -> "42". */
+export function formatTokenCount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(Math.round(n));
+}
+
 
 // Full-screen ChatUI -- two-stage UX (Cline parity):
 //   idle: landing prompt + hint line; active: streamed messages; status bar pinned bottom.
@@ -81,12 +126,14 @@ export const ChatUI = (props: ChatUIProps) => {
     if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
   }, [slashOpen, slashCommands.length]);
 
+  const settingsActive = props.settingsOpen === true && typeof props.onSettingsSave === "function" && props.settingsInitial !== undefined;
+  const modelsActive = props.modelsOpen === true && typeof props.onModelsCommit === "function";
   useInput((ch, key) => {
-    // While the menu is open, Tab accepts the highlight (Shift+Tab keeps
-    // its auto-approve toggle). Bare Tab only flips Plan/Build when closed.
+    if (props.settingsOpen === true || props.modelsOpen === true) return;
+    // Do NOT intercept Ctrl+C / Ctrl+V — let the terminal handle copy/paste natively.
+    // Users can exit via the /quit command or the menu's exit option.
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
     if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
-    if (key.ctrl && (ch === "c" || ch === "C")) { props.onExit(); return; }
     if (key.escape) {
       if (slashOpen) { closeSlashMenu(); return; }
       props.onCancel();
@@ -140,53 +187,78 @@ export const ChatUI = (props: ChatUIProps) => {
     }
   });
 
+  // SettingsMenu renders inline above the input bar (no full-screen takeover).
+
   return (
     <Box flexDirection="column" height={height}>
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {props.messages.length === 0 && !props.isRunning && (
-          <Box justifyContent="center" paddingY={4}>
-            <Text>{CYAN}What can I do for you?{RESET}</Text>
-          </Box>
+        {modelsActive ? (
+          <ModelsTab
+            models={props.models ?? []}
+            activeModel={props.activeModel ?? ""}
+            activeProviderId={props.activeProviderId ?? ""}
+            loading={props.modelsLoading}
+            onCommit={props.onModelsCommit!}
+            onClose={props.onModelsClose ?? (() => {})}
+          />
+        ) : settingsActive && props.settingsInitial !== undefined && typeof props.onSettingsSave === "function" ? (
+          <SettingsMenu
+            initial={props.settingsInitial}
+            onSave={props.onSettingsSave}
+            onModeChange={props.onSettingsModeChange}
+            onAutoApproveChange={props.onSettingsAutoApproveChange}
+            workspace={props.workspace}
+            sessionDir={props.settingsSessionDir}
+            usage={props.settingsUsage}
+          />
+        ) : (
+          <>
+            {props.messages.length === 0 && !props.isRunning && (
+              <Box justifyContent="center" paddingY={4}>
+                <Text>{CYAN}What can I do for you?{RESET}</Text>
+              </Box>
+            )}
+
+            {props.messages.map((m, i) => (
+              <Box key={i} flexDirection="column">
+                {m.role === "user" ? (
+                  <Text>{GREEN}[YOU]{RESET} {m.content}</Text>
+                ) : (
+                  <Box flexDirection="column">
+                    <Text>{CYAN}[AGENT]{RESET}</Text>
+                    {m.content
+                      ? m.content.split("\n").map((line, j) => (
+                          <Text key={j}>{`  ${line}`}</Text>
+                        ))
+                      : null}
+                  </Box>
+                )}
+
+                {m.toolCalls && m.toolCalls.length > 0 && (
+                  <Box flexDirection="column" marginLeft={2}>
+                    {m.toolCalls.map((tc) => (
+                      <Text key={tc.id}>
+                        {DIM}[{tc.name}]{RESET} {JSON.stringify(tc.input).slice(0, 120)}
+                      </Text>
+                    ))}
+                  </Box>
+                )}
+
+                {m.toolResults && m.toolResults.length > 0 && (
+                  <Box flexDirection="column" marginLeft={4}>
+                    {m.toolResults.map((r) => (
+                      <Text key={r.callId} color={r.isError ? "red" : "gray"} >
+                        {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
+                      </Text>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            ))}
+
+            {props.isRunning && <Text>{DIM}...{RESET}</Text>}
+          </>
         )}
-
-        {props.messages.map((m, i) => (
-          <Box key={i} flexDirection="column">
-            {m.role === "user" ? (
-              <Text>{GREEN}You:{RESET} {m.content}</Text>
-            ) : (
-              <Box flexDirection="column">
-                <Text>{CYAN}TOOLIFY:{RESET}</Text>
-                {m.content
-                  ? m.content.split("\n").map((line, j) => (
-                      <Text key={j}>{`  ${line}`}</Text>
-                    ))
-                  : null}
-              </Box>
-            )}
-
-            {m.toolCalls && m.toolCalls.length > 0 && (
-              <Box flexDirection="column" marginLeft={2}>
-                {m.toolCalls.map((tc) => (
-                  <Text key={tc.id}>
-                    {DIM}[{tc.name}]{RESET} {JSON.stringify(tc.input).slice(0, 120)}
-                  </Text>
-                ))}
-              </Box>
-            )}
-
-            {m.toolResults && m.toolResults.length > 0 && (
-              <Box flexDirection="column" marginLeft={4}>
-                {m.toolResults.map((r) => (
-                  <Text key={r.callId} color={r.isError ? "red" : "gray"}>
-                    {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </Box>
-        ))}
-
-        {props.isRunning && <Text>{DIM}...{RESET}</Text>}
       </Box>
 
       {/* Floating slash-command menu -- directly above the input bar */}
@@ -217,9 +289,24 @@ export const ChatUI = (props: ChatUIProps) => {
       <Box justifyContent="space-between" paddingX={1} height={2}>
         <Box flexDirection="column">
           <Text>
-            {CYAN}{props.status.model}{RESET}
-            {DIM} ({props.status.inputTokens + props.status.outputTokens} tok){RESET}
-            {" " + DIM + `${props.status.costUsd.toFixed(2)}` + RESET}
+            <Text color="white">Model: </Text>
+            <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.model}</Text>
+            <Text color="white"> | Tokens: </Text>
+            <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.inputTokens + props.status.outputTokens}</Text>
+            {props.status.limitTokens != null && props.status.remainingTokens != null && (
+              <>
+                <Text color="white"> | Rem: </Text>
+                <Text color={props.status.isExhausted ? "red" : "green"}>
+                  {formatTokenCount(props.status.remainingTokens)}
+                  {props.status.limitTokens != null ? `/${formatTokenCount(props.status.limitTokens)}` : ""}
+                </Text>
+              </>
+            )}
+            {props.status.isExhausted && props.status.resetTime != null && (
+              <>
+                <Text color="red"> | [Quota Exceeded — Resets in {props.status.resetTime}]</Text>
+              </>
+            )}
           </Text>
           <Text>
             {DIM}{props.workspace}{RESET}
@@ -228,8 +315,11 @@ export const ChatUI = (props: ChatUIProps) => {
         <Box flexDirection="column" alignItems="flex-end">
           <Text>
             {props.mode === "plan"
-              ? BLUE_BRIGHT + BALL_ACTIVE + " Plan" + RESET + "   " + DIM + BALL_IDLE + " Build" + RESET
-              : DIM + BALL_IDLE + " Plan" + RESET + "   " + GREEN_BRIGHT + BALL_ACTIVE + " Build" + RESET}
+              ? <Text color="green">Plan: [ON]</Text>
+              : <Text color="gray">Plan: [OFF]</Text>}
+            {props.mode === "act"
+              ? <Text color="green"> | Build: [ON]</Text>
+              : <Text color="gray"> | Build: [OFF]</Text>}
             {DIM} (Tab){RESET}
           </Text>
           <Text>

@@ -8,7 +8,7 @@ export interface MenuScreenProps {
   readonly userName: string;
   readonly user: AuthUser;
   readonly config: ToolifyConfig;
-  readonly usage: { inputTokens: number; outputTokens: number; costUsd: number };
+  readonly usage: { inputTokens: number; outputTokens: number };
   readonly history: Array<{ role: "user" | "assistant"; preview: string; ts: number }>;
   readonly onEnter: () => void;
   readonly onEsc: () => void;
@@ -219,7 +219,7 @@ export function MenuScreen(props: MenuScreenProps): React.ReactElement {
             <Text bold>This session</Text>
             <Text>{" "}Input tokens:  {GREEN}{fmtTokens(props.usage.inputTokens)}{RESET}</Text>
             <Text>{" "}Output tokens: {GREEN}{fmtTokens(props.usage.outputTokens)}{RESET}</Text>
-            <Text>{" "}Total cost:    {YELLOW}{fmtCost(props.usage.costUsd)}{RESET}</Text>
+            <Box height={1} />
             <Box height={1} />
             <Text bold>Lifetime</Text>
             <Text dimColor>  Aggregated usage is tracked per-workspace.</Text>

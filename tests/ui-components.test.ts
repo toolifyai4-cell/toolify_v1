@@ -1,3 +1,233 @@
+function renderConfigModal(
+  initialStep: number,
+  needsBaseUrl = false,
+  initialStatus: "idle" | "verifying" | "ok" | "error" = "idle",
+): string {
+  return renderToString(
+    React.createElement(ProviderConfigModal, {
+      providerId: "openai" as const,
+      providerName: "OpenAI",
+      defaultModel: "gpt-4o",
+      needsBaseUrl,
+      guidanceText: "Enter your openai API key to continue.",
+      obtainUrl: "https://platform.openai.com/api-keys",
+      workspace: "C:\\tmp\\toolify-fresh",
+      initialStep,
+      initialStatus,
+      onConfirm: () => {},
+      onCancel: () => {},
+    }),
+    { columns: 80 },
+  );
+}
+
+describe("ProviderConfigModal (regression: escaped unicode + input handling)", () => {
+  it("renders no literal \\u2588 / \\u00b7 escape text anywhere", () => {
+    for (const step of [0, 1, 2]) {
+      const out = renderConfigModal(step, true);
+      expect(out).not.toContain("\\u2588");
+      expect(out).not.toContain("\\u00b7");
+      expect(out).not.toContain("\\u2500");
+      expect(out).not.toContain("\\u2713");
+      expect(out).not.toContain("\\u2717");
+    }
+  });
+
+  it("renders real rendered glyphs for the separators and divider", () => {
+    const out = renderConfigModal(0);
+    expect(out).toContain("·"); // real middle dot between step labels
+    expect(out).toContain("─"); // real box-drawing divider
+  });
+
+  it("api-key step shows the focused native TextInput with placeholder", () => {
+    const out = renderConfigModal(1);
+    // Native component renders its own placeholder inside a bordered field.
+    expect(out).toContain("Paste your key here...");
+    expect(out).toContain("API Key");
+    // The hand-rolled blink cursor is gone: no raw block character and no
+    // literal escape text may appear (native inverse-video cursor instead).
+    expect(out).not.toContain("█");
+    expect(out).not.toContain("\\u2588");
+    expect(out).not.toContain("undefined");
+  });
+
+  it("shows the Base URL field for local gateways and hides it for cloud keys", () => {
+    expect(renderConfigModal(1, true)).toContain("Base URL (optional)");
+    expect(renderConfigModal(1, false)).not.toContain("Base URL (optional)");
+  });
+
+  it("verify step renders the spec'd status panes with real glyphs", () => {
+    const ok = renderConfigModal(2, false, "ok");
+    expect(ok).toContain("[✓] Configuration Verified & Successful!");
+    expect(ok).toContain("Key saved to ~/.toolify/config.json");
+    expect(ok).toContain("Press Enter or Esc to return to Settings.");
+    expect(ok).toContain(String.fromCodePoint(0x2713));
+    expect(ok).not.toContain("\\u2713");
+    const err = renderConfigModal(2, false, "error");
+    expect(err).toContain("[✗] Verification Failed: Invalid API Key or Unauthorized");
+    expect(err).toContain(String.fromCodePoint(0x2717));
+    expect(err).not.toContain("\\u2717");
+    const verifying = renderConfigModal(2, false, "verifying");
+    expect(verifying).toContain("Verifying API key with provider endpoint...");
+  });
+});
+
+describe("ProviderConfigModal live verification flow", () => {
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  function fakeStdout(writes: string[]): NodeJS.WriteStream {
+    const stream = new Writable({
+      write(chunk, _enc, cb) {
+        writes.push(chunk.toString());
+        cb();
+      },
+    }) as unknown as NodeJS.WriteStream;
+    Object.assign(stream, { isTTY: true, columns: 80, rows: 24 });
+    return stream;
+  }
+
+  function fakeStdin(): NodeJS.ReadStream {
+    const stdin = new Readable({ read() {} }) as unknown as NodeJS.ReadStream;
+    Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
+    return stdin;
+  }
+
+  function modalProps(overrides: Record<string, unknown> = {}) {
+    return {
+      providerId: "openai" as const,
+      providerName: "OpenAI",
+      defaultModel: "gpt-4o",
+      needsBaseUrl: false,
+      guidanceText: "Enter your openai API key to continue.",
+      obtainUrl: "https://platform.openai.com/api-keys",
+      workspace: "C:\\tmp\\toolify-fresh",
+      initialStep: 1,
+      onConfirm: () => {},
+      onCancel: () => {},
+      ...overrides,
+    };
+  }
+
+  it("pastes a key, verifies on Enter, persists on 2xx, closes on Esc", async () => {
+    const writes: string[] = [];
+    const confirmCalls: Array<{ provider: string; key: string; baseUrl: string }> = [];
+    let cancelled = 0;
+    const stdin = fakeStdin();
+    const instance = render(
+      React.createElement(
+        ProviderConfigModal,
+        modalProps({
+          verify: async () => ({ ok: true, detail: "" }),
+          onConfirm: (provider: string, key: string, baseUrl: string) => {
+            confirmCalls.push({ provider, key, baseUrl });
+          },
+          onCancel: () => {
+            cancelled += 1;
+          },
+        }),
+      ),
+      { stdout: fakeStdout(writes), stdin, exitOnCtrlC: false, interactive: true },
+    );
+        try {
+      await sleep(120);
+      // A terminal paste buffer arrives as ONE multi-character chunk.
+      stdin.push("sk-live-pasted-key");
+      await sleep(80);
+      stdin.push("\r"); // Enter on the "Enter Key" step -> live verification
+      await sleep(200);
+      // Flush any pending React state updates from the async verify callback.
+      await instance.waitUntilRenderFlush();
+      expect(confirmCalls).toEqual([
+        { provider: "openai", key: "sk-live-pasted-key", baseUrl: "" },
+      ]);
+      const frame = writes.join("");
+      expect(frame).toContain("Configuration Verified & Successful!");
+      expect(frame).toContain("Key saved to ~/.toolify/config.json");
+      expect(frame).toContain("Press Enter or Esc to return to Settings.");
+      stdin.push("\x1b"); // Esc on the success pane returns to Settings
+      await sleep(120);
+      await instance.waitUntilRenderFlush();
+      expect(cancelled).toBe(1);
+    } finally {
+      instance.unmount();
+      await sleep(50);
+    }
+  });
+
+  it("does NOT persist on 401 and returns to the focused input for editing", async () => {
+    const writes: string[] = [];
+    const confirmCalls: unknown[] = [];
+    let verifyCalls = 0;
+    const stdin = fakeStdin();
+    const instance = render(
+      React.createElement(
+        ProviderConfigModal,
+        modalProps({
+          verify: async () => {
+            verifyCalls += 1;
+            return { ok: false, detail: "Incorrect API key provided (HTTP 401)" };
+          },
+          onConfirm: () => {
+            confirmCalls.push(true);
+          },
+        }),
+      ),
+      { stdout: fakeStdout(writes), stdin, exitOnCtrlC: false, interactive: true },
+    );
+    try {
+      await sleep(120);
+      stdin.push("bad-key");
+      await sleep(80);
+      stdin.push("\r");
+      await sleep(200);
+      expect(confirmCalls).toHaveLength(0); // invalid key was never saved
+      const frame = writes.join("");
+      expect(frame).toContain("[✗] Verification Failed: Invalid API Key or Unauthorized");
+      expect(frame).toContain("Incorrect API key provided (HTTP 401)");
+      expect(frame).toContain("Edit or re-paste your key, then press Enter to verify again.");
+      // The input field is back with the draft key preserved (masked bullets).
+      expect(frame).toContain("•••");
+      // Pressing Enter again re-runs verification against the edited key.
+      stdin.push("\r");
+      await sleep(200);
+      expect(verifyCalls).toBe(2);
+      expect(confirmCalls).toHaveLength(0);
+    } finally {
+      instance.unmount();
+      await sleep(50);
+    }
+  });
+});
+
+function wizardProps(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    needsAuth: false,
+    existingConfig: null,
+    callbacks: {
+      runLogin: () => Promise.resolve({ name: "t", id: "1" }),
+      saveConfig: () => Promise.resolve(),
+    },
+    onFinish: () => {},
+    ...overrides,
+  };
+}
+
+describe("OnboardingWizard apikey step (regression: paste + focus)", () => {
+  it("renders the API key field with a focused native TextInput and real separator", () => {
+    // Default flow for non-auth users lands directly on the apikey step.
+    const out = renderToString(
+      React.createElement(OnboardingWizard, wizardProps()),
+      { columns: 80 },
+    );
+    expect(out).toContain("Paste your API key here...");
+    expect(out).toContain("Key:");
+    expect(out).not.toContain("\\u00b7"); // footer separator renders for real
+    expect(out).toContain("·");
+    expect(out).not.toContain("undefined");
+  });
+});
+
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { Readable, Writable } from "node:stream";
@@ -10,6 +240,8 @@ import {
   type ChatMessage,
 } from "../src/components/ChatUI.js";
 import { MenuScreen } from "../src/components/MenuScreen.js";
+import { ProviderConfigModal } from "../src/components/ProviderConfigModal.js";
+import { OnboardingWizard } from "../src/components/OnboardingWizard.js";
 
 /**
  * Render smoke tests.
@@ -30,7 +262,6 @@ function chatProps(overrides: Partial<ChatUIProps> = {}): ChatUIProps {
       model: "gpt-4o",
       inputTokens: 120,
       outputTokens: 30,
-      costUsd: 0.0123,
       turnCount: 1,
     },
     mode: "act",
@@ -56,20 +287,22 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
     const out = renderChat();
     expect(out).toContain("What can I do for you?");
     expect(out).toContain("Type a message or / for commands...");
+    expect(out).toContain("Model: ");
     expect(out).toContain("gpt-4o");
-    expect(out).toContain("(150 tok)");
+    expect(out).toContain("150");
+    expect(out).not.toContain("128000");
     expect(out).toContain("C:\\tmp\\toolify-fresh");
   });
 
-  it("renders the mode indicator with the filled ball on the ACTIVE mode", () => {
+  it("renders the mode indicator with the active mode highlighted", () => {
     const act = renderChat(); // default mode is "act", displayed as "Build"
-    expect(act).toContain(`${BALL_IDLE} Plan`);
-    expect(act).toContain(`${BALL_ACTIVE} Build`);
+    expect(act).toContain("Plan: [OFF]");
+    expect(act).toContain("| Build: [ON]");
     expect(act).toContain("(Tab)");
 
     const plan = renderChat({ mode: "plan" });
-    expect(plan).toContain(`${BALL_ACTIVE} Plan`);
-    expect(plan).toContain(`${BALL_IDLE} Build`);
+    expect(plan).toContain("Plan: [ON]");
+    expect(plan).toContain("| Build: [OFF]");
   });
 
   it("uses real ball glyphs, not escaped text (regression guard)", () => {
@@ -109,9 +342,9 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
       },
     ];
     const out = renderChat({ messages });
-    expect(out).toContain("You:");
+    expect(out).toContain("[YOU]");
     expect(out).toContain("write hello.ts");
-    expect(out).toContain("TOOLIFY:");
+    expect(out).toContain("[AGENT]");
     expect(out).toContain("Done!");
     expect(out).toContain("Second line");
     expect(out).toContain("[write_file]");

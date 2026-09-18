@@ -9,6 +9,7 @@ import type {
   ToolSchema,
   Usage,
 } from "../agent/types.js";
+import { updateQuotaFromHeaders } from "./quota-tracker.js";
 
 /**
  * OpenAI-compatible adapter (OpenAI, OpenRouter, Ollama, LM Studio, etc.).
@@ -22,6 +23,7 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
   readonly modelId: string;
   readonly baseUrl: string;
   readonly pricing: ModelPricing;
+  readonly providerId: string;
 
   constructor(opts: {
     baseUrl: string;
@@ -29,12 +31,14 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     model: string;
     name?: string;
     pricing?: ModelPricing;
+    providerId?: string;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.modelId = opts.model;
     this.name = opts.name ?? "openai-compatible";
     this.apiKey = opts.apiKey;
     this.pricing = opts.pricing ?? { inputPerM: 0, outputPerM: 0 };
+    this.providerId = opts.providerId ?? "unknown";
   }
   private readonly apiKey?: string;
 
@@ -104,7 +108,16 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
       outputTokens: data.usage?.completion_tokens ?? 0,
     };
 
-    return { text, toolCalls, usage, finishReason };
+    // Parse rate-limit / quota headers from the response and persist them.
+    if (res.headers && typeof res.headers.forEach === "function") {
+      try {
+        const headerMap: Record<string, string> = {};
+        res.headers.forEach((v: string, k: string) => { headerMap[k] = v; });
+        updateQuotaFromHeaders(this.providerId, this.modelId, headerMap);
+      } catch { /* quota tracking is best-effort */ }
+    }
+
+    return { text, toolCalls, usage, finishReason, providerId: this.providerId };
   }
 
   private toWireMessage(m: ModelMessage): unknown {
