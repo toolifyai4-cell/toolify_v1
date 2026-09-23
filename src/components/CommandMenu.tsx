@@ -75,34 +75,47 @@ export function CommandMenu({
   const hiddenCount = commands.length - visible.length;
 
   return (
-    <Box borderStyle="single" borderColor={tokens.border} flexDirection="column" paddingX={1}>
+    <Box
+      borderStyle="single"
+      borderColor={tokens.border}
+      flexDirection="column"
+      paddingX={1}
+      marginBottom={1}
+    >
       {visible.map((cmd, i) => {
         const absoluteIndex = start + i;
         const active = absoluteIndex === safeSelected;
         return (
-          <Box key={cmd.name} justifyContent="space-between">
-            {active ? (
-              <Box flexGrow={1} justifyContent="space-between" backgroundColor={tokens.primary}>
-                <Text color={tokens.textInverted} bold>
-                  {`> ${cmd.name}`}
-                </Text>
-                <Text color={tokens.textInverted}> {cmd.description}</Text>
-              </Box>
-            ) : (
-              <>
-                <Text>
-                  {"  "}
-                  {cmd.name}
-                </Text>
-                <Text dimColor> {cmd.description}</Text>
-              </>
-            )}
+          <Box
+            key={cmd.name}
+            flexDirection="row"
+            flexGrow={1}
+            backgroundColor={active ? tokens.primary : undefined}
+          >
+            <Box width={14} flexShrink={0}>
+              <Text
+                color={active ? tokens.textInverted : tokens.text}
+                bold={active}
+                wrap="truncate"
+              >
+                {active ? `> ${cmd.name}` : `  ${cmd.name}`}
+              </Text>
+            </Box>
+            <Box flexGrow={1} flexShrink={1} paddingLeft={1} minWidth={0}>
+              <Text
+                color={active ? tokens.textInverted : undefined}
+                dimColor={!active}
+                wrap="truncate"
+              >
+                {cmd.description}
+              </Text>
+            </Box>
           </Box>
         );
       })}
       {hiddenCount > 0 && (
         <Box>
-          <Text dimColor>{`\u25bc ${hiddenCount} more`}</Text>
+          <Text dimColor>{`▼ ${hiddenCount} more`}</Text>
         </Box>
       )}
     </Box>

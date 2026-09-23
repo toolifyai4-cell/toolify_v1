@@ -1,8 +1,8 @@
-# ---- TOOLIFY OAuth credentials (KEEP SECRET - never commit this file) ----
+# ---- NEXIPI OAuth credentials (KEEP SECRET - never commit this file) ----
 # Paste the values from Google Cloud Console and GitHub OAuth App settings.
-TOOLIFY_GOOGLE_CLIENT_ID=
-TOOLIFY_GOOGLE_CLIENT_SECRET=
-TOOLIFY_GITHUB_CLIENT_ID=
-TOOLIFY_GITHUB_CLIENT_SECRET=
+NEXIPI_GOOGLE_CLIENT_ID=
+NEXIPI_GOOGLE_CLIENT_SECRET=
+NEXIPI_GITHUB_CLIENT_ID=
+NEXIPI_GITHUB_CLIENT_SECRET=
 
 

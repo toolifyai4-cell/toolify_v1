@@ -1,0 +1,50 @@
+=== A) regex-confirmed on-disk unoroute base-URL lines in EVERY source file ===
+src/models/fetch-models.ts:unoroute  = https://api.unorouter.com/v1
+src/models/model-registry.ts:unoroute  = UnoRoute
+src/models/verify-key.ts:unoroute  = https://api.unorouter.com/v1
+src/utils/config.ts:unoroute  = UNOROUTE_API_KEY
+src/utils/config.ts:unoroute  = https://api.unorouter.com/v1
+
+=== B) any legacy :unorouter/unorout.dev references remaining in src (expect NONE) ===
+src\cli\run.ts
+src\components\settings.ts
+src\models\fetch-models.ts
+src\models\model-registry.ts
+src\models\verify-key.ts
+src\utils\config.ts
+
+=== C) working-tree short status (real) ===
+ D _checkball.ts
+ D _fixball.cjs
+ D _fixflow.cjs
+ D _fixmenu.cjs
+ D _fixscreen.cjs
+ D _gen_chat.cjs
+ D _patch_chat.cjs
+ D _repair.cjs
+ D _result.json
+ D _rewrite_chatui.cjs
+ D _rewrite_chatui2.cjs
+ D _rm_model.cjs
+ D _rm_model2.cjs
+ D _rm_model3.cjs
+ D _rm_model4.cjs
+ D _screen_test.ts
+ D _test.err
+ D _test.out
+ D _test.txt
+ D _tidy.cjs
+ D console.log((Math.max(0
+ D npm-out.txt
+ D settings_backup.txt
+ M src/agent/loop.ts
+ M src/components/ChatUI.tsx
+ M src/components/OnboardingWizard.tsx
+ M src/models/fetch-models.ts
+ M src/models/verify-key.ts
+ M src/utils/config.ts
+ D vitest-out.txt
+
+=== D) tsc final gate marker (pre) ===
+config.ts unoroute base line on disk: unoroute: "UNOROUTE_API_KEY"
+fetch-models.ts unoroute base line on disk: unoroute: "https://api.unorouter.com/v1"

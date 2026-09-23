@@ -1,7 +1,13 @@
 node_modules/
 dist/
-.toolify/sessions/
-.toolify/objects/
+.nexipi/sessions/
+.nexipi/objects/
 *.log
 .DS_Store
 .env
+.tmp-smoke/
+*-out.txt
+_*.cjs
+_*.mjs
+_test.*
+_result.json

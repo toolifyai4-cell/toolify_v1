@@ -4,7 +4,7 @@ import { request, get } from "node:https";
 
 function envClientId(provider: "google" | "github"): string {
   const key =
-    provider === "google" ? "TOOLIFY_GOOGLE_CLIENT_ID" : "TOOLIFY_GITHUB_CLIENT_ID";
+    provider === "google" ? "NEXIPI_GOOGLE_CLIENT_ID" : "NEXIPI_GITHUB_CLIENT_ID";
   const v = process.env[key];
   if (!v) throw new Error(`Missing ${key}. Set the matching _SECRET to enable ${provider} login.`);
   return v;
@@ -12,7 +12,7 @@ function envClientId(provider: "google" | "github"): string {
 
 function envClientSecret(provider: "google" | "github"): string {
   const key =
-    provider === "google" ? "TOOLIFY_GOOGLE_CLIENT_SECRET" : "TOOLIFY_GITHUB_CLIENT_SECRET";
+    provider === "google" ? "NEXIPI_GOOGLE_CLIENT_SECRET" : "NEXIPI_GITHUB_CLIENT_SECRET";
   const v = process.env[key];
   if (!v) throw new Error(`Missing ${key}. Set the matching _CLIENT_ID to enable ${provider} login.`);
   return v;

@@ -292,9 +292,11 @@ export const ChatUI = (props: ChatUIProps) => {
         )}
       </Box>
 
-      {/* Floating slash-command menu -- directly above the input bar */}
+      {/* Floating slash-command menu -- separate overlay box directly above the input bar */}
       {slashOpen && slashCommands.length > 0 && (
-        <CommandMenu commands={slashCommands} selectedIndex={slashIndex} />
+        <Box marginLeft={1} marginBottom={1}>
+          <CommandMenu commands={slashCommands} selectedIndex={slashIndex} />
+        </Box>
       )}
 
       {/* Input bar -- visible, bordered, with placeholder and cursor */}
@@ -346,22 +348,34 @@ export const ChatUI = (props: ChatUIProps) => {
             {DIM}Ctrl+Backspace: Quit | Esc: Stop/Close{RESET}
           </Text>
         </Box>
-        <Box flexDirection="column" alignItems="flex-end">
-          <Text>
-            {props.mode === "plan"
-              ? <Text color="green">Plan: [ON]</Text>
-              : <Text color="gray">Plan: [OFF]</Text>}
-            {props.mode === "act"
-              ? <Text color="green"> | Build: [ON]</Text>
-              : <Text color="gray"> | Build: [OFF]</Text>}
-            {DIM} (Tab){RESET}
+        <Box flexDirection="column" alignItems="flex-end" flexShrink={0} paddingLeft={2}>
+          <Text wrap="truncate">
+            {props.mode === "plan" ? (
+              <Text color="green">Plan: [ON]</Text>
+            ) : (
+              <Text color="gray">Plan: [OFF]</Text>
+            )}
+            {props.mode === "act" ? (
+              <Text color="green"> | Build: [ON]</Text>
+            ) : (
+              <Text color="gray"> | Build: [OFF]</Text>
+            )}
+            <Text dimColor> (Tab)</Text>
           </Text>
-          <Text>
-            {props.autoApprove === "all"
-              ? YELLOW + "Auto-approve ALL" + RESET + DIM + " (Shift+Tab)" + RESET
-              : props.autoApprove === "writes"
-              ? YELLOW + "Auto-approve writes" + RESET + DIM + " (Shift+Tab)" + RESET
-              : DIM + "Auto-approve off" + RESET + DIM + " (Shift+Tab)" + RESET}
+          <Text wrap="truncate">
+            {props.autoApprove === "all" ? (
+              <Text>
+                <Text color="yellow">Auto-approve ALL</Text>
+                <Text dimColor> (Shift+Tab)</Text>
+              </Text>
+            ) : props.autoApprove === "writes" ? (
+              <Text>
+                <Text color="yellow">Auto-approve writes</Text>
+                <Text dimColor> (Shift+Tab)</Text>
+              </Text>
+            ) : (
+              <Text dimColor>Auto-approve off (Shift+Tab)</Text>
+            )}
           </Text>
         </Box>
       </Box>
