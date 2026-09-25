@@ -72,7 +72,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   },
 ];
 
-const TIER_BY_TOOL: Record<string, RiskTier> = {
+/** Exported so the ToolDefinition adapter can look up the risk tier. */
+export const TIER_BY_TOOL: Record<string, RiskTier> = {
   read_file: "read",
   glob: "read",
   grep: "read",

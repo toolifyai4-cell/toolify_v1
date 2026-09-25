@@ -10,16 +10,9 @@ import type { ModelAdapter, ModelPricing } from "../agent/types.js";
 import { OpenAICompatibleAdapter } from "../models/openai-compatible.js";
 import { AnthropicAdapter } from "../models/anthropic.js";
 import { MockModelAdapter } from "../models/mock.js";
-import { PathGuard } from "../tools/fs-tools.js";
-import { PolicyEngine, type ProjectPolicyConfig, TOOL_SCHEMAS } from "../tools/registry.js";
-import { TaskDigest } from "../agent/digest.js";
-import { ContextManager } from "../agent/context.js";
-import { CostMeter } from "../agent/meter.js";
-import { LoopDetector } from "../agent/loop-detector.js";
-import { AgentLoop, type ApprovalHandler } from "../agent/loop.js";
-import { SessionStore } from "../storage/session.js";
-import { CheckpointStore } from "../checkpoint/store.js";
-import { VerificationGate } from "../verify/gate.js";
+import { type ProjectPolicyConfig } from "../tools/registry.js";
+import { type ApprovalHandler, createAgentLoop } from "../agent/loop.js";
+import { createAgentContainer } from "../app/container.js";
 import { startChat } from "./chat.js";
 import { startEntryFlow } from "./entry-new.js";
 import { loadAuthSession, isAuthSessionValid, runAuthFlow, logout } from "../auth/index.js";
@@ -269,53 +262,56 @@ export function buildProgram(): Command {
       const workspace = resolve(opts.workspace);
       const cfg = await loadConfig(workspace);
       const adapter = createAdapter(cfg, workspace);
-      const guard = new PathGuard(workspace);
-      const policy = new PolicyEngine(cfg.policy ?? {});
-      const digest = new TaskDigest(goal);
-      const context = new ContextManager(adapter, digest, { contextWindow: cfg.contextWindow });
-      const meter = new CostMeter(adapter.pricing);
-      const sessions = new SessionStore(workspace, SessionStore.newId());
-      const checkpoints = new CheckpointStore(workspace);
       const approval = makeApproval(opts.autoApprove === true);
-      const loopDetector = new LoopDetector();
-      await sessions.init();
-      await checkpoints.init();
 
       const emitAgentEvent = (e: unknown) => {
         if (opts.json) console.log(JSON.stringify(e));
         else printEventHuman(e);
       };
 
-      const verification = new VerificationGate(guard, emitAgentEvent as never, {
-        commands: cfg.verification?.commands ?? [],
-        maxRounds: cfg.verification?.maxRounds ?? 3,
+      const deps = createAgentContainer({
+        workspace,
+        model: adapter,
+        goal,
+        mode: "act",
+        maxIterations: opts.maxIterations ?? cfg.maxIterations ?? 40,
+        policyConfig: cfg.policy ?? {},
+        verificationCommands: cfg.verification?.commands ?? [],
+        verificationMaxRounds: cfg.verification?.maxRounds ?? 3,
+        contextWindow: cfg.contextWindow,
+        approval,
+        onEvent: emitAgentEvent,
+                onStream: opts.json
+          ? {
+              onError: (banner, kind) =>
+                console.log(JSON.stringify({ type: "error", banner, kind })),
+              onToolStart: (call) =>
+                console.log(JSON.stringify({ type: "tool_start", call })),
+              onToolResult: (callId, result, isError) =>
+                console.log(JSON.stringify({ type: "tool_result", callId, result, isError })),
+              onAssistantText: (text) =>
+                console.log(JSON.stringify({ type: "assistant_delta", text })),
+              onStatus: (status) =>
+                console.log(JSON.stringify({ type: "status", status })),
+              onFirstToken: () =>
+                console.log(JSON.stringify({ type: "first_token" })),
+            }
+          : undefined,
       });
 
-            const loop = new AgentLoop({
-        adapter,
-        guard,
-        policy,
-        digest,
-        context,
-        meter,
-        sessions,
-        checkpoints,
-        verification,
-        approval,
-        loopDetector,
-        tools: TOOL_SCHEMAS,
-        maxIterations: opts.maxIterations ?? cfg.maxIterations ?? 40,
-        mode: "act",
-      });
+      await deps.sessions.init();
+      await deps.checkpoints.init();
+
+      const loop = createAgentLoop(deps);
 
       const result = await loop.run(goal);
       if (opts.json) {
-        console.log(JSON.stringify({ type: "run_result", ...result, costUsd: meter.costUsd }));
+        console.log(JSON.stringify({ type: "run_result", ...result, costUsd: deps.meter.costUsd }));
       } else {
         console.log(
-          `\n[TOOLIFY finished: ${result.finishReason} | iterations: ${result.iterations} | verification rounds: ${result.verificationRounds} | cost: $${meter.costUsd.toFixed(4)}]`,
+          `\n[TOOLIFY finished: ${result.finishReason} | iterations: ${result.iterations} | verification rounds: ${result.verificationRounds} | cost: $${deps.meter.costUsd.toFixed(4)}]`,
         );
-        console.log(`[session log: ${sessions.sessionDir}\\events.jsonl]`);
+        console.log(`[session log: ${deps.sessions.sessionDir}\events.jsonl]`);
       }
       process.exitCode = result.finishReason === "stop" ? 0 : 1;
     });

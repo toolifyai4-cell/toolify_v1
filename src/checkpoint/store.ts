@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir, stat, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import type { CheckpointRepository } from "../persistence/checkpoint-repository.js";
 
 /**
  * Content-addressed checkpoint store (R3).
@@ -23,7 +24,7 @@ export interface Checkpoint {
   files: FileSnapshot[];
 }
 
-export class CheckpointStore {
+export class CheckpointStore implements CheckpointRepository {
   private readonly objectsDir: string;
   private readonly ckptDir: string;
 

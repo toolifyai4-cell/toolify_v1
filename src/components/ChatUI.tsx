@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, useInput, useWindowSize } from "ink";
+import { Box, Text, useCursor, useInput, useStdout, useWindowSize } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
 import { SettingsMenu } from "./SettingsMenu.js";
@@ -78,6 +78,8 @@ export const GREEN_BRIGHT = "\x1b[92m";
 export const BLUE = "\x1b[34m";
 export const BLUE_BRIGHT = "\x1b[94m";
 export const YELLOW = "\x1b[33m";
+export const YELLOW_BRIGHT = "\x1b[93m";
+export const WHITE = "\x1b[37m";
 export const RED = "\x1b[31m";
 export const RESET = "\x1b[0m";
 
@@ -116,16 +118,17 @@ export const ChatUI = (props: ChatUIProps) => {
   // Guard: rows can be undefined/0 on patched TTYs; without this the
   // root collapses to content height and the input bar floats at the top.
   const height = typeof rows === "number" && rows > 0 ? rows : 24;
+  useCursor();
+  // On Windows fullscreen (render.sync path), useCursor() alone doesn't emit
+  // the hide-cursor escape, so explicitly hide the native terminal caret.
+  const { stdout } = useStdout();
+  React.useEffect(() => {
+    stdout.write("\x1B[?25l");
+    return () => { stdout.write("\x1B[?25h"); };
+  }, [stdout]);
   const [inputValue, setInputValue] = React.useState("");
   const [slashOpen, setSlashOpen] = React.useState(false);
   const [slashIndex, setSlashIndex] = React.useState(0);
-  const [blink, setBlink] = React.useState(true);
-
-  React.useEffect(() => {
-    const t = setInterval(() => setBlink((b) => !b), 500);
-    return () => clearInterval(t);
-  }, []);
-
   const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
   const slashCommands = React.useMemo(
     () => (slashOpen ? filterSlashCommands(slashQuery) : []),
@@ -139,12 +142,34 @@ export const ChatUI = (props: ChatUIProps) => {
     if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
   }, [slashOpen, slashCommands.length]);
 
+  const [blink, setBlink] = React.useState(true);
+  React.useEffect(() => {
+    const t = setInterval(() => setBlink((b) => !b), 500);
+    return () => clearInterval(t);
+  }, []);
+
+
+
   const settingsActive = props.settingsOpen === true && typeof props.onSettingsSave === "function" && props.settingsInitial !== undefined;
   const modelsActive = props.modelsOpen === true && typeof props.onModelsCommit === "function";
   useInput((ch, key) => {
     if (props.settingsOpen === true || props.modelsOpen === true) return;
+
+    // Quit shortcuts — checked before the backspace handler so that
+    // Ctrl+Shift+Backspace is NOT consumed as a character delete.
+    // 1. Ctrl+/ arrives as 0x1f in legacy xterm/VS Code (no key.ctrl flag
+    //    from ink, so we test the raw byte directly).
+    // 2. Ctrl+Shift+Backspace arrives via the kitty keyboard protocol as
+    //    \x1b[127;6u, which ink decodes to key.ctrl=true, key.shift=true,
+    //    key.backspace=true.  Plain Backspace (0x7f) and Ctrl+Backspace
+    //    (\x1b[127;5u) have key.shift=false, so they must NOT trigger this.
+    if (ch === "\x1f" || (key.ctrl && key.shift && key.backspace)) {
+      props.onExit();
+      return;
+    }
+
     // Do NOT intercept Ctrl+C / Ctrl+V — let the terminal handle copy/paste natively.
-    // Users can exit via the /quit command or the menu's exit option.
+    // Users can exit via the /quit command, Ctrl+/ or Ctrl+Shift+Backspace.
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
     if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
     if (key.escape) {
@@ -235,10 +260,12 @@ export const ChatUI = (props: ChatUIProps) => {
             {props.messages.map((m, i) => (
               <Box key={i} flexDirection="column">
                 {m.role === "user" ? (
-                  <Text>{GREEN}[YOU]{RESET} {m.content}</Text>
+                  <Text>{BLUE_BRIGHT}[YOU]{RESET} {m.content}</Text>
+                ) : isErrorBanner(m.content) ? (
+                  <Text color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
                 ) : (
                   <Box flexDirection="column">
-                    <Text>{CYAN}[AGENT]{RESET}</Text>
+                    {m.content && <Text>{BLUE_BRIGHT}[AGENT]{RESET}</Text>}
                     {m.content
                       ? m.content.split("\n").map((line, j) => (
                           <Text key={j}>{`  ${line}`}</Text>
@@ -257,7 +284,7 @@ export const ChatUI = (props: ChatUIProps) => {
                   <Box flexDirection="column" marginLeft={2}>
                     {m.toolCalls.map((tc) => (
                       <Text key={tc.id}>
-                        {DIM}[{tc.name}]{RESET} {JSON.stringify(tc.input).slice(0, 120)}
+                        {BLUE_BRIGHT}[{tc.name}]{RESET} {JSON.stringify(tc.input).slice(0, 120)}
                       </Text>
                     ))}
                   </Box>
@@ -266,7 +293,7 @@ export const ChatUI = (props: ChatUIProps) => {
                 {m.toolResults && m.toolResults.length > 0 && (
                   <Box flexDirection="column" marginLeft={4}>
                     {m.toolResults.map((r) => (
-                      <Text key={r.callId} color={r.isError ? "red" : "gray"} >
+                      <Text key={r.callId} color={r.isError ? "red" : "blueBright"} >
                         {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
                       </Text>
                     ))}
@@ -274,18 +301,6 @@ export const ChatUI = (props: ChatUIProps) => {
                 )}
               </Box>
             ))}
-
-            {/* System banners (error / timeout / cancelled) rendered as colored boxes
-                instead of normal [AGENT] messages. */}
-            {props.messages.filter((m) => m.role === "assistant" && isErrorBanner(m.content)).map((m, i) => {
-              const isError = m.content.startsWith("[ERROR]");
-              const isTimeout = m.content.startsWith("[TIMEOUT]");
-              return (
-                <Box key={`banner-${i}`} marginLeft={2} borderStyle="round" borderColor={isTimeout ? "yellow" : "red"}>
-                  <Text color={isTimeout ? "yellow" : "red"}>{m.content}</Text>
-                </Box>
-              );
-            })}
 
             {props.isRunning && <Text>{DIM}...{RESET}</Text>}
           </>
@@ -307,28 +322,30 @@ export const ChatUI = (props: ChatUIProps) => {
         paddingX={1}
       >
         <Box alignItems="center">
-          <Text>{GREEN}You {RESET}</Text>
+          <Text>{BLUE_BRIGHT}You {RESET}</Text>
           <Text>
             {inputValue.length > 0 ? (
-              <Text>{inputValue}</Text>
+              <><Text>{inputValue}</Text>{blink && <Text bold color="cyan">█</Text>}</>
             ) : (
-              <Text dimColor>Type a message or / for commands...</Text>
+              <>
+                {blink && <Text bold color="cyan">█</Text>}
+                <Text dimColor>Type a message or / for commands...</Text>
+              </>
             )}
           </Text>
-          {!props.isRunning && <Text>{blink ? `${CYAN}|${RESET}` : " "}</Text>}
         </Box>
       </Box>
       {/* Hint line */}
       <Box justifyContent="space-between" paddingX={1} height={3}>
         <Box flexDirection="column">
           <Text>
-            <Text color="white">Model: </Text>
+            <Text>{WHITE}Model: {RESET}</Text>
             <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.model}</Text>
-            <Text color="white"> | Tokens: </Text>
+            <Text>{DIM} | {RESET}</Text><Text>{WHITE}Tokens: {RESET}</Text>
             <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.inputTokens + props.status.outputTokens}</Text>
             {props.status.limitTokens != null && props.status.remainingTokens != null && (
               <>
-                <Text color="white"> | Rem: </Text>
+                <Text>{DIM} | {RESET}</Text><Text>{WHITE}Rem: {RESET}</Text>
                 <Text color={props.status.isExhausted ? "red" : "green"}>
                   {formatTokenCount(props.status.remainingTokens)}
                   {props.status.limitTokens != null ? `/${formatTokenCount(props.status.limitTokens)}` : ""}
@@ -337,30 +354,28 @@ export const ChatUI = (props: ChatUIProps) => {
             )}
             {props.status.isExhausted && props.status.resetTime != null && (
               <>
-                <Text color="red"> | [Quota Exceeded — Resets in {props.status.resetTime}]</Text>
+                <Text>{DIM} | {RESET}</Text><Text color="red">[Quota Exceeded — Resets in {props.status.resetTime}]</Text>
               </>
             )}
           </Text>
           <Text>
-            {DIM}{props.workspace}{RESET}
+            <Text>{WHITE}{props.workspace}{RESET}</Text>
           </Text>
-          <Text>
-            {DIM}Ctrl+Backspace: Quit | Esc: Stop/Close{RESET}
-          </Text>
+          <Text>{WHITE}Ctrl+Shift+Backspace: Quit {RESET}{DIM}|{RESET}{WHITE} Esc: Stop/Close{RESET}</Text>
         </Box>
         <Box flexDirection="column" alignItems="flex-end" flexShrink={0} paddingLeft={2}>
           <Text wrap="truncate">
             {props.mode === "plan" ? (
-              <Text color="green">Plan: [ON]</Text>
+              <Text color="yellowBright">Plan [ON]</Text>
             ) : (
-              <Text color="gray">Plan: [OFF]</Text>
+              <Text dimColor>Plan [OFF]</Text>
             )}
             {props.mode === "act" ? (
-              <Text color="green"> | Build: [ON]</Text>
+              <Text color="greenBright"> | Build [ON]</Text>
             ) : (
-              <Text color="gray"> | Build: [OFF]</Text>
+              <Text dimColor> | Build [OFF]</Text>
             )}
-            <Text dimColor> (Tab)</Text>
+            <Text dimColor> (Tab)</Text>
           </Text>
           <Text wrap="truncate">
             {props.autoApprove === "all" ? (

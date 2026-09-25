@@ -29,7 +29,20 @@ export interface VerificationOutcome {
   results: Array<{ name: string; command: string; passed: boolean; output: string }>;
 }
 
-export class VerificationGate {
+/**
+ * Verification service contract.
+ *
+ * The runtime depends on this interface, not on the concrete `VerificationGate`
+ * class. Existing callers that cast to `VerificationGate` still work.
+ */
+export interface VerificationService {
+  readonly enabled: boolean;
+  readonly maxRounds: number;
+  run(): Promise<VerificationOutcome>;
+  failureFeedback(outcome: VerificationOutcome): string;
+}
+
+export class VerificationGate implements VerificationService {
   readonly config: VerificationConfig;
 
   constructor(
@@ -42,6 +55,11 @@ export class VerificationGate {
 
   get enabled(): boolean {
     return this.config.commands.length > 0;
+  }
+
+  /** Convenience accessor for the maximum verification rounds. */
+  get maxRounds(): number {
+    return this.config.maxRounds;
   }
 
   async run(): Promise<VerificationOutcome> {
@@ -82,5 +100,10 @@ export class VerificationGate {
       `[VERIFICATION FAILED: ${failed.name} ("${failed.command}")]\n` +
       `Fix this before finishing. Output:\n${failed.output.slice(0, 4000)}`
     );
+  }
+
+  /** Instance-level convenience that delegates to the static method. */
+  failureFeedback(outcome: VerificationOutcome): string {
+    return VerificationGate.failureFeedback(outcome);
   }
 }

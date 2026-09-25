@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentMode,
+  ChatResponse,
   ModelMessage,
   ToolCall,
   ToolSchema,
@@ -8,13 +9,33 @@ import type {
 import type { TaskDigest } from "./digest.js";
 import type { ContextManager } from "./context.js";
 import type { CostMeter } from "./meter.js";
-import type { SessionStore } from "../storage/session.js";
-import type { CheckpointStore } from "../checkpoint/store.js";
-import { VerificationGate, type VerificationOutcome } from "../verify/gate.js";
+import type { SessionRepository } from "../persistence/session-repository.js";
+import type { CheckpointRepository } from "../persistence/checkpoint-repository.js";
+import type { VerificationOutcome, VerificationService } from "../verify/gate.js";
 import type { PathGuard } from "../tools/fs-tools.js";
-import type { PolicyEngine } from "../tools/registry.js";
+import type { PolicyGate } from "../tools/tool.js";
 import type { LoopDetector } from "./loop-detector.js";
 import type { ModelAdapter } from "./types.js";
+import type { ModelProvider } from "../providers/provider.js";
+import type { ToolRegistry, ToolResult } from "../tools/tool.js";
+import type {
+  ApprovalService,
+  ApprovalContext,
+} from "../safety/approval-service.js";
+import type { AgentEventBus } from "./events.js";
+import type {
+  AgentDependencies,
+  StreamCallbacks,
+} from "../app/runtime-context.js";
+// Value imports used only by the legacy `resolveDeps()` bridge.
+import { createModelProvider } from "../providers/provider.js";
+import { createToolRegistryAdapter } from "../tools/tool-registry-adapter.js";
+// Timeout primitives now live in ./timeouts.ts so the streaming consumer can
+// raise the same error without importing this module. Re-exported here for
+// backward compatibility with existing importers.
+import { AgentTimeoutError, withTimeout } from "./timeouts.js";
+import { consumeProviderStream } from "./stream-consumer.js";
+export { AgentTimeoutError, withTimeout } from "./timeouts.js";
 
 export interface ApprovalHandler {
   request(
@@ -23,22 +44,61 @@ export interface ApprovalHandler {
   ): Promise<{ approved: boolean; scope?: "once" | "session" }>;
 }
 
+/**
+ * The dependency set the agent loop actually consumes.
+ *
+ * Every member is an interface, so the loop has no compile-time or runtime
+ * dependency on `PolicyEngine`, `SessionStore`, `CheckpointStore`,
+ * `VerificationGate`, or any concrete `ModelAdapter`. The legacy concrete
+ * options (`AgentLoopOptions`) are normalised into this shape by
+ * `resolveDeps()`, which is why existing call sites keep working unchanged.
+ */
+export interface AgentRuntimeDeps {
+  readonly provider: ModelProvider;
+  readonly toolRegistry: ToolRegistry;
+  readonly policy: PolicyGate;
+  readonly approval: ApprovalService;
+  readonly sessions: SessionRepository;
+  readonly checkpoints: CheckpointRepository;
+  readonly verification: VerificationService;
+  readonly eventBus?: AgentEventBus;
+  readonly digest: TaskDigest;
+  readonly context: ContextManager;
+  readonly meter: CostMeter;
+  readonly loopDetector: LoopDetector;
+  readonly guard: PathGuard;
+  readonly tools: readonly ToolSchema[];
+  readonly maxIterations: number;
+  readonly mode: AgentMode;
+  readonly modelTimeoutMs?: number;
+  readonly signal?: AbortSignal;
+  readonly onStream?: StreamCallbacks;
+}
+
 export interface AgentLoopOptions {
   adapter: ModelAdapter;
   guard: PathGuard;
-  policy: PolicyEngine;
+  /**
+   * Legacy options shape, retained for backward compatibility.
+   *
+   * New code should prefer `createAgentLoop(deps)` with the
+   * interface-only `AgentDependencies` / `AgentRuntimeDeps`. Passing this
+   * shape still works: the constructor normalises it through
+   * `resolveDeps()`.
+   */
+  policy: PolicyGate;
   digest: TaskDigest;
   context: ContextManager;
   meter: CostMeter;
-  sessions: SessionStore;
-  checkpoints: CheckpointStore;
-  verification: VerificationGate;
+  sessions: SessionRepository;
+  checkpoints: CheckpointRepository;
+  verification: VerificationService;
   approval: ApprovalHandler;
   loopDetector: LoopDetector;
   tools: ToolSchema[];
   maxIterations: number;
   /**
-   * Wall-clock budget for one `adapter.chat()` call (default 30s).
+   * Wall-clock budget for one provider `chat()` call (default 30s).
    * Fires `AgentTimeoutError` so a hung provider can never freeze the TUI.
    */
   modelTimeoutMs?: number;
@@ -54,20 +114,14 @@ export interface AgentLoopOptions {
   signal?: AbortSignal;
   /**
    * Live-streamed stream callbacks so the TUI can render incrementally.
+   * Uses the `StreamCallbacks` type from the runtime context.
    */
-  onStream?: {
-    onAssistantText?: (delta: string) => void;
-    onToolStart?: (call: ToolCall) => void;
-    onToolResult?: (callId: string, result: string, isError: boolean) => void;
-    onStatus?: (status: { inputTokens: number; outputTokens: number; costUsd: number }) => void;
-    /** Fired once per model turn when the first token arrives. */
-    onFirstToken?: () => void;
-    /**
-     * Fired when the run fails with a parsed, user-friendly error banner.
-     * The TUI renders this as a colored error box in the chat stream.
-     */
-    onError?: (banner: string, kind: "error" | "timeout") => void;
-  };
+  onStream?: StreamCallbacks;
+  /**
+   * Optional event bus. When present, every session event is also emitted
+   * here so subscribers (tests, live UI, telemetry) receive a parallel copy.
+   */
+  eventBus?: AgentEventBus;
 }
 
 export interface AgentRunResult {
@@ -77,48 +131,7 @@ export interface AgentRunResult {
 }
 
 
-/**
- * Wrap a promise with a wall-clock timeout.
- *
- * When the timer fires first the caller sees an `AgentTimeoutError` whose
- * message names the timed-out operation; when the work finishes first the
- * timer is cleared and the result passes through untouched.
- */
-export class AgentTimeoutError extends Error {
-  readonly operation: string;
-  readonly timeoutMs: number;
-  constructor(operation: string, timeoutMs: number) {
-    super(`${operation} timed out after ${Math.round(timeoutMs / 1000)}s`);
-    this.name = "AgentTimeoutError";
-    this.operation = operation;
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-export function withTimeout<T>(
-  work: Promise<T>,
-  timeoutMs: number,
-  operation: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const guard = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new AgentTimeoutError(operation, timeoutMs)), timeoutMs);
-    timer.unref?.();
-  });
-  return Promise.race([work, guard]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  });
-}
-
 export const DEFAULT_MODEL_TIMEOUT_MS = 30_000;
-
-/**
- * Short human label for the active adapter used in error/timeout messages.
- * Prefers `name` when the adapter exposes one, else falls back to its model id.
- */
-function adapterLabel(o: Pick<AgentLoopOptions, "adapter">): string {
-  return o.adapter.name || o.adapter.modelId || "model";
-}
 
 const TOOL_TARGET_KEYS = ["path", "pattern", "command"] as const;
 
@@ -225,9 +238,107 @@ function classifyAgentError(
   };
 }
 
+/** Distinguish an already-resolved `AgentRuntimeDeps` from legacy options. */
+function isRuntimeDeps(o: AgentLoopOptions | AgentRuntimeDeps): o is AgentRuntimeDeps {
+  return (o as AgentRuntimeDeps).provider !== undefined;
+}
+
+/**
+ * Normalise the legacy concrete options into the interface-only
+ * `AgentRuntimeDeps` shape the loop actually consumes.
+ *
+ * This is the single place where the concrete `PolicyEngine`, `ApprovalHandler`
+ * and `ModelAdapter` are bridged into the new contracts. Everything below the
+ * constructor is interface-only.
+ */
+function resolveDeps(o: AgentLoopOptions): AgentRuntimeDeps {
+  // The legacy `PolicyEngine` also exposes `execute(guard, call)`; the registry
+  // adapter wraps exactly that, so tools keep their current behaviour.
+  const policyWithExecute = o.policy as PolicyGate & {
+    execute?: (guard: PathGuard, call: ToolCall) => Promise<unknown>;
+  };
+  const toolRegistry: ToolRegistry =
+    typeof policyWithExecute.execute === "function"
+      ? createToolRegistryAdapter(o.policy, o.policy as never, o.guard)
+      : ({
+          async execute(call: ToolCall, ctx): Promise<ToolResult> {
+            const r = await policyWithExecute.execute!(ctx.guard as PathGuard, call);
+            const content = typeof r === "string" ? (r as string) : (r as { output: string }).output;
+            const failed =
+              typeof r === "object" && "exitCode" in (r as object) && (r as { exitCode: number }).exitCode !== 0;
+            return failed
+              ? {
+                  ok: false,
+                  content,
+                  error: { code: "TOOL_EXECUTION_FAILED", message: content, recoverable: true },
+                }
+              : { ok: true, content };
+          },
+          get: (name: string) =>
+            o.tools.find((t) => t.name === name)
+              ? {
+                  name,
+                  description: o.tools.find((t) => t.name === name)!.description,
+                  risk: "dangerous" as const,
+                  inputSchema: o.tools.find((t) => t.name === name)!.inputSchema,
+                  validate: (i: unknown) => i,
+                  execute: async (i: unknown) => ({ ok: true, content: String(i) }),
+                }
+              : undefined,
+          list: () =>
+            o.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              risk: "dangerous" as const,
+              inputSchema: t.inputSchema,
+              validate: (i: unknown) => i,
+              execute: async (i: unknown) => ({ ok: true, content: String(i) }),
+            })),
+        } satisfies ToolRegistry);
+
+  const approval: ApprovalService = {
+    async request(call, ctx: ApprovalContext) {
+      const d = await o.approval.request(call, ctx.reason);
+      return {
+        approved: d.approved,
+        scope: d.scope,
+        reason: d.approved ? undefined : "denied by user",
+      };
+    },
+  };
+
+  return {
+    provider: createModelProvider(o.adapter),
+    toolRegistry,
+    policy: o.policy,
+    approval,
+    sessions: o.sessions,
+    checkpoints: o.checkpoints,
+    verification: o.verification,
+    eventBus: o.eventBus,
+    digest: o.digest,
+    context: o.context,
+    meter: o.meter,
+    loopDetector: o.loopDetector,
+    guard: o.guard,
+    tools: o.tools,
+    maxIterations: o.maxIterations,
+    mode: o.mode,
+    modelTimeoutMs: o.modelTimeoutMs,
+    signal: o.signal,
+    onStream: o.onStream,
+  };
+}
+
 export class AgentLoop {
   private aborted = false;
-  constructor(private readonly opts: AgentLoopOptions) {}
+  private readonly opts: AgentRuntimeDeps;
+  private readonly label: string;
+
+  constructor(opts: AgentLoopOptions | AgentRuntimeDeps) {
+    this.opts = isRuntimeDeps(opts) ? opts : resolveDeps(opts);
+    this.label = this.opts.provider.id || this.opts.provider.modelId || "model";
+  }
 
   /** Abort the current run. Safe to call from outside the loop. */
   abort(): void {
@@ -265,6 +376,7 @@ export class AgentLoop {
 
   private async emit(e: AgentEvent): Promise<void> {
     await this.opts.sessions.append(e);
+    this.opts.eventBus?.emit(e);
   }
 
   async run(userGoal: string): Promise<AgentRunResult> {
@@ -281,7 +393,7 @@ export class AgentLoop {
       let feedback: string | null = null;
       let done = false;
 
-      while (!done && verificationRounds <= o.verification.config.maxRounds) {
+      while (!done && verificationRounds <= o.verification.maxRounds) {
         if (this.aborted) {
           await this.emit({ type: "run_finished", reason: "aborted" as never, ts: Date.now() });
           return { finishReason: "aborted", iterations, verificationRounds };
@@ -310,30 +422,24 @@ export class AgentLoop {
             : messages;
           feedback = null;
 
-          const res = await withTimeout(
-            o.adapter.chat({
-              system: this.systemPrompt(),
-              messages: requestMessages,
-              tools: o.tools,
-              signal: o.signal,
-            }),
-            o.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS,
-            `model call (${adapterLabel(o)})`,
-          );
+          const { response: res, streamed } = await this.runModelTurn(requestMessages);
 
           const { usage, costUsd } = o.meter.add(res.usage);
           await this.emit({ type: "usage_update", usage, costUsd, ts: Date.now() });
 
-                    if (res.text) {
+          if (res.text) {
             await this.emit({
               type: "assistant_message",
               content: res.text,
               usage: res.usage,
               ts: Date.now(),
             });
-                        // Stream assistant text live to the TUI (Cline renders markdown as it streams).
-            o.onStream?.onFirstToken?.();
-            o.onStream?.onAssistantText?.(res.text);
+            // When streaming, deltas were already pushed to the TUI live, so
+            // only the non-streaming path re-sends the whole message here.
+            if (!streamed) {
+              o.onStream?.onFirstToken?.();
+              o.onStream?.onAssistantText?.(res.text);
+            }
             o.onStream?.onStatus?.({
               inputTokens: o.meter.usage.inputTokens,
               outputTokens: o.meter.usage.outputTokens,
@@ -360,11 +466,11 @@ export class AgentLoop {
               if (outcome.passed) {
                 finishReason = "stop";
                 done = true;
-              } else if (verificationRounds > o.verification.config.maxRounds) {
+              } else if (verificationRounds > o.verification.maxRounds) {
                 finishReason = "verification_failed";
                 done = true;
               } else {
-                feedback = VerificationGate.failureFeedback(outcome);
+                feedback = o.verification.failureFeedback(outcome);
               }
             } else {
               finishReason = "stop";
@@ -373,7 +479,11 @@ export class AgentLoop {
             break;
           }
 
-                    const results = [];
+          const results: Array<{
+            callId: string;
+            content: string;
+            isError?: boolean;
+          }> = [];
           for (const call of res.toolCalls) {
             // Mode filtering (Cline parity): Plan mode blocks write/dangerous tools.
             const allowedByMode =
@@ -393,10 +503,10 @@ export class AgentLoop {
                 isError: true,
                 ts: Date.now(),
               });
-                            o.onStream?.onToolResult?.(call.id, blocked.content, true);
+              o.onStream?.onToolResult?.(call.id, blocked.content, true);
               continue;
             }
-                        // Fire streaming hook: the TUI highlights this tool in the conversation.
+            // Fire streaming hook: the TUI highlights this tool in the conversation.
             o.onStream?.onToolStart?.(call);
             const result = await this.executeTool(call, iteration + 1);
             results.push(result);
@@ -433,7 +543,7 @@ export class AgentLoop {
         finishReason = "aborted";
         await this.emit({ type: "error", message: "Run cancelled by user.", ts: Date.now() });
       } else {
-        const label = adapterLabel(o);
+        const label = this.label;
         const classification = classifyAgentError(err, label, undefined);
         await this.emit({ type: "error", message: classification.banner, ts: Date.now() });
         o.onStream?.onError?.(classification.banner, classification.kind);
@@ -449,6 +559,50 @@ export class AgentLoop {
     return { finishReason, iterations, verificationRounds };
   }
 
+  /**
+   * Execute one model turn, preferring the streaming path.
+   *
+   * Both paths return the same `ChatResponse` shape, so the rest of the loop is
+   * agnostic to which one ran. `streamed` tells the caller whether text
+   * deltas were already delivered, so it does not re-send the full message.
+   *
+   * Note the timeout semantics differ by path, and deliberately so:
+   *  - non-streaming: one wall-clock deadline for the entire call
+   *  - streaming: a per-chunk idle deadline (a long generation is fine; a
+   *    silent stream is a hang)
+   */
+  private async runModelTurn(
+    messages: ModelMessage[],
+  ): Promise<{ response: ChatResponse; streamed: boolean }> {
+    const o = this.opts;
+    const request = {
+      system: this.systemPrompt(),
+      messages,
+      tools: [...o.tools],
+      signal: o.signal,
+    };
+    const timeoutMs = o.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+
+    if (o.provider.capabilities.streaming && o.provider.stream) {
+      const response = await consumeProviderStream({
+        provider: o.provider,
+        request,
+        idleTimeoutMs: timeoutMs,
+        signal: o.signal,
+        onFirstToken: o.onStream?.onFirstToken,
+        onTextDelta: o.onStream?.onAssistantText,
+      });
+      return { response, streamed: true };
+    }
+
+    const response = await withTimeout(
+      o.provider.chat(request),
+      timeoutMs,
+      `model call (${this.label})`,
+    );
+    return { response, streamed: false };
+  }
+
   /** Policy check → approval (if gated) → execute → checkpoint → loop check. */
   private async executeTool(
     call: ToolCall,
@@ -458,13 +612,17 @@ export class AgentLoop {
     const decision = o.policy.decide(call);
 
     if (!decision.allowed) {
-      const ask = await o.approval.request(call, decision.reason);
+      const ask = await o.approval.request(call, {
+        riskTier: decision.tier,
+        reason: decision.reason,
+        workspace: o.guard.root,
+      });
       if (!ask.approved) {
         await this.emit({
           type: "approval_decision",
           callId: call.id,
           approved: false,
-          reason: "denied by user",
+          reason: ask.reason ?? "denied by user",
           ts: Date.now(),
         });
         return {
@@ -473,7 +631,7 @@ export class AgentLoop {
           isError: true,
         };
       }
-      if (ask.scope === "session") {
+      if (ask.scope === "session" || ask.scope === "workspace") {
         o.policy.grantForSession(decision.tier);
       }
       await this.emit({
@@ -489,9 +647,16 @@ export class AgentLoop {
     let content: string;
     let isError = false;
     try {
-      const r = await o.policy.execute(o.guard, call);
-      content = typeof r === "string" ? r : r.output;
-      isError = typeof r === "object" && "exitCode" in r && r.exitCode !== 0;
+      const r = await o.toolRegistry.execute(call, {
+        workspace: o.guard.root,
+        guard: o.guard,
+        signal: o.signal,
+        policy: o.policy,
+        approval: o.approval,
+        eventBus: o.eventBus,
+      });
+      content = r.content;
+      isError = !r.ok;
     } catch (err) {
       content = err instanceof Error ? err.message : String(err);
       isError = true;
@@ -544,4 +709,42 @@ function touchedPaths(call: ToolCall): string[] {
     return typeof input.path === "string" ? [input.path] : [];
   }
   return [];
+}
+
+// ---------------------------------------------------------------------------
+// Dependency-injection factory
+// ---------------------------------------------------------------------------
+
+/** Re-export the stream-callbacks type for callers that import from the loop. */
+export type { StreamCallbacks } from "../app/runtime-context.js";
+
+/**
+ * Construct an `AgentLoop` from the container's `AgentDependencies`.
+ *
+ * The container already exposes every dependency as an interface, so this is a
+ * direct pass-through — no adapters, no round-tripping. The loop body is
+ * interface-only from here on.
+ */
+export function createAgentLoop(deps: AgentDependencies): AgentLoop {
+  return new AgentLoop({
+    provider: deps.provider,
+    toolRegistry: deps.toolRegistry,
+    policy: deps.policy,
+    approval: deps.approval,
+    sessions: deps.sessionRepo,
+    checkpoints: deps.checkpointRepo,
+    verification: deps.verification,
+    eventBus: deps.eventBus,
+    digest: deps.digest,
+    context: deps.context,
+    meter: deps.meter,
+    loopDetector: deps.loopDetector,
+    guard: deps.guard,
+    tools: deps.toolSchemas,
+    maxIterations: deps.maxIterations,
+    mode: deps.mode,
+    modelTimeoutMs: deps.modelTimeoutMs,
+    signal: deps.signal,
+    onStream: deps.onStream,
+  });
 }

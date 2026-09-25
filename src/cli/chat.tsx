@@ -1,16 +1,11 @@
 import React from "react";
 import { render, useApp } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
-import { PathGuard } from "../tools/fs-tools.js";
-import { PolicyEngine, TOOL_SCHEMAS } from "../tools/registry.js";
-import { TaskDigest } from "../agent/digest.js";
-import { ContextManager } from "../agent/context.js";
+import { type ApprovalHandler, type AgentLoop, createAgentLoop } from "../agent/loop.js";
+import { createAgentContainer } from "../app/container.js";
 import { CostMeter } from "../agent/meter.js";
-import { LoopDetector } from "../agent/loop-detector.js";
-import { AgentLoop, type ApprovalHandler } from "../agent/loop.js";
 import { SessionStore } from "../storage/session.js";
 import { CheckpointStore } from "../checkpoint/store.js";
-import { VerificationGate } from "../verify/gate.js";
 import type { ToolifyConfig } from "./run.js";
 import { createAdapter } from "./run.js";
 import { saveConfig } from "./run.js";
@@ -47,9 +42,7 @@ export function ChatHost({
   initialSettingsOpen?: boolean;
 }): React.ReactElement {
   const [liveCfg, setLiveCfg] = React.useState<ToolifyConfig>(cfg);
-  const adapter = React.useMemo(() => createAdapter(liveCfg, workspace), [liveCfg, workspace]);
-  const guard = React.useMemo(() => new PathGuard(workspace), [workspace]);
-  const policy = React.useMemo(() => new PolicyEngine(liveCfg.policy ?? {}), [liveCfg]);
+    const adapter = React.useMemo(() => createAdapter(liveCfg, workspace), [liveCfg, workspace]);
   const meterRef = React.useRef<CostMeter | null>(null);
   if (meterRef.current === null) meterRef.current = new CostMeter(adapter.pricing);
   const sessionsRef = React.useRef<SessionStore | null>(null);
@@ -282,32 +275,22 @@ export function ChatHost({
 
       // Abort controller allows Esc / Ctrl+Backspace to cancel the in-flight
       // HTTP request instead of letting it hang until timeout.
-      const controller = new AbortController();
+            const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const digest = new TaskDigest(input);
-      const context = new ContextManager(adapter, digest, { contextWindow: cfg.contextWindow });
-      const verification = new VerificationGate(guard, () => {}, {
-        commands: cfg.verification?.commands ?? [],
-        maxRounds: cfg.verification?.maxRounds ?? 3,
-      });
-
-      const loop = new AgentLoop({
-        adapter,
-        guard,
-        policy,
-        digest,
-        context,
-        meter: meterRef.current!,
-        sessions: sessionsRef.current!,
-        checkpoints: checkpointsRef.current!,
-        verification,
-        approval,
-        loopDetector: new LoopDetector(),
-        tools: TOOL_SCHEMAS,
-        maxIterations: cfg.maxIterations ?? 40,
+      const deps = createAgentContainer({
+        workspace,
+        model: adapter,
+        goal: input,
         mode,
+        maxIterations: cfg.maxIterations ?? 40,
+        policyConfig: liveCfg.policy ?? {},
+        verificationCommands: liveCfg.verification?.commands ?? [],
+        verificationMaxRounds: liveCfg.verification?.maxRounds ?? 3,
+        contextWindow: liveCfg.contextWindow,
         signal: controller.signal,
+        sessionId: sessionsRef.current?.id,
+        approval,
         onStream: {
           onAssistantText: (text) => {
             mutateMessages((prev) => {
@@ -342,7 +325,7 @@ export function ChatHost({
             });
           },
           onStatus: () => setTurnCount((t) => t),
-          onError: (banner) => {
+          onError: (banner, kind) => {
             // Clear the thinking placeholder so we don't show a duplicate
             // spinner alongside the error banner.
             mutateMessages((prev) => {
@@ -359,6 +342,14 @@ export function ChatHost({
           },
         },
       });
+
+      await deps.sessions.init();
+      await deps.checkpoints.init();
+
+      // Sync usage into the persistent meter ref for the /usage command.
+      meterRef.current!.add(deps.meter.usage);
+
+      const loop = createAgentLoop(deps);
 
       try {
         await loop.run(input);
@@ -381,7 +372,7 @@ export function ChatHost({
         });
       }
     },
-        [adapter, guard, policy, cfg, mode, approval, mutateMessages],
+        [adapter, liveCfg, mode, approval, mutateMessages],
   );
 
   if (showMenu && session?.user) {
@@ -463,8 +454,19 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
       children: React.createElement(ChatHost, { workspace, cfg }),
     }),
     {
+      // Enable the kitty keyboard protocol so the terminal disambiguates
+      // Ctrl+Shift+Backspace from plain Backspace. Without it both arrive as
+      // 0x7f and the quit shortcut can never fire.  The
+      // reportAllKeysAsEscapeCodes flag is required for *non-printable* keys
+      // (Backspace, Delete, arrows) to be reported through the protocol
+      // instead of as raw bytes — plain Backspace would otherwise be
+      // indistinguishable from Ctrl+Shift+Backspace.
       exitOnCtrlC: false,
       interactive: true,
+      kittyKeyboard: {
+        mode: "enabled",
+        flags: ["reportAllKeysAsEscapeCodes"],
+      },
     },
   );
   process.on("SIGINT", () => {

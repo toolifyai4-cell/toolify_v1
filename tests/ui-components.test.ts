@@ -296,13 +296,13 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
 
   it("renders the mode indicator with the active mode highlighted", () => {
     const act = renderChat(); // default mode is "act", displayed as "Build"
-    expect(act).toContain("Plan: [OFF]");
-    expect(act).toContain("| Build: [ON]");
+    expect(act).toContain("Plan [OFF]");
+    expect(act).toContain("| Build [ON]");
     expect(act).toContain("(Tab)");
 
     const plan = renderChat({ mode: "plan" });
-    expect(plan).toContain("Plan: [ON]");
-    expect(plan).toContain("| Build: [OFF]");
+    expect(plan).toContain("Plan [ON]");
+    expect(plan).toContain("| Build [OFF]");
   });
 
   it("uses real ball glyphs, not escaped text (regression guard)", () => {

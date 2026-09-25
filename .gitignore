@@ -2,6 +2,9 @@ node_modules/
 dist/
 .nexipi/sessions/
 .nexipi/objects/
+.toolify/sessions/
+.toolify/objects/
+.toolify/checkpoints/
 *.log
 .DS_Store
 .env
@@ -11,3 +14,7 @@ _*.cjs
 _*.mjs
 _test.*
 _result.json
+# Captured command output / scratch artifacts
+tests_output.txt
+tests_after_impl.txt
+docs/*.bak

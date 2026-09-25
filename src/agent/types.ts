@@ -58,6 +58,22 @@ export interface ChatRequest {
 
 export type FinishReason = "stop" | "tool_use" | "max_tokens" | "error";
 
+/**
+ * Normalised incremental events for one model turn.
+ *
+ * This is the canonical definition; `src/providers/provider.ts` re-exports it
+ * so provider-focused code can import from a single place.
+ */
+export type ModelEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
+  | { type: "tool_call_start"; id: string; name: string }
+  | { type: "tool_call_delta"; id: string; argumentsDelta: string }
+  | { type: "tool_call_complete"; call: ToolCall }
+  | { type: "usage"; usage: Usage }
+  | { type: "completed"; finishReason: FinishReason }
+  | { type: "error"; error: { code: string; message: string } };
+
 /** Execution mode (Cline parity): Plan = read-only tools only; Act = full tools. */
 export type AgentMode = "plan" | "act";
 
@@ -75,6 +91,14 @@ export interface ModelAdapter {
   readonly modelId: string;
   readonly pricing: ModelPricing;
   chat(req: ChatRequest): Promise<ChatResponse>;
+  /**
+   * Optional incremental delivery of the same turn `chat()` would return.
+   *
+   * Adapters that omit this are treated as non-streaming: the loop calls
+   * `chat()` and behaves exactly as before. `MockModelAdapter` deliberately
+   * omits it so the deterministic end-to-end tests stay on the stable path.
+   */
+  stream?(req: ChatRequest): AsyncIterable<ModelEvent>;
 }
 
 // ---------------------------------------------------------------------------
