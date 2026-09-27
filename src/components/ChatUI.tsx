@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text, useCursor, useInput, useStdout, useWindowSize } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
+import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import type { ModelDescriptor } from "../models/model-registry.js";
@@ -255,45 +256,62 @@ export const ChatUI = (props: ChatUIProps) => {
               <Box justifyContent="center" paddingY={4}>
                 <Text>{CYAN}What can I do for you?{RESET}</Text>
               </Box>
-            )}
-
-            {props.messages.map((m, i) => (
-              <Box key={i} flexDirection="column">
+            )}            {props.messages.map((m, i) => (
+              <Box key={i} flexDirection="column" paddingBottom={1}>
                 {m.role === "user" ? (
-                  <Text>{BLUE_BRIGHT}[YOU]{RESET} {m.content}</Text>
+                  <Box flexDirection="column">
+                    <Text>
+                      <Text backgroundColor="blue" color="black" bold> YOU </Text>
+                      {" "}
+                      <MarkdownText content={m.content} />
+                    </Text>
+                  </Box>
                 ) : isErrorBanner(m.content) ? (
                   <Text color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
                 ) : (
                   <Box flexDirection="column">
-                    {m.content && <Text>{BLUE_BRIGHT}[AGENT]{RESET}</Text>}
-                    {m.content
-                      ? m.content.split("\n").map((line, j) => (
-                          <Text key={j}>{`  ${line}`}</Text>
-                        ))
-                      : m.thinking
-                        ? (
-                          <Box alignItems="center" marginLeft={2}>
-                            <Text>{DIM}...{RESET}</Text>
-                          </Box>
-                        )
-                        : null}
+                    <Text>
+                      {m.content && (
+                        <Text backgroundColor="magenta" color="black" bold>
+                          {" "}NEXIPI{" "}
+                        </Text>
+                      )}
+                      {" "}
+                      {m.content ? (
+                        <MarkdownText content={m.content} />
+                      ) : null}
+                    </Text>
                   </Box>
                 )}
 
                 {m.toolCalls && m.toolCalls.length > 0 && (
-                  <Box flexDirection="column" marginLeft={2}>
+                  <Box
+                    borderStyle="round"
+                    borderColor="gray"
+                    paddingX={1}
+                    marginLeft={1}
+                    marginTop={1}
+                    flexDirection="column"
+                  >
                     {m.toolCalls.map((tc) => (
-                      <Text key={tc.id}>
-                        {BLUE_BRIGHT}[{tc.name}]{RESET} {JSON.stringify(tc.input).slice(0, 120)}
+                      <Text key={tc.id} dimColor>
+                        {"[TOOL] "}{tc.name} {" "}{JSON.stringify(tc.input).slice(0, 120)}
                       </Text>
                     ))}
                   </Box>
                 )}
 
                 {m.toolResults && m.toolResults.length > 0 && (
-                  <Box flexDirection="column" marginLeft={4}>
+                  <Box
+                    borderStyle="round"
+                    borderColor="gray"
+                    paddingX={1}
+                    marginLeft={1}
+                    marginTop={1}
+                    flexDirection="column"
+                  >
                     {m.toolResults.map((r) => (
-                      <Text key={r.callId} color={r.isError ? "red" : "blueBright"} >
+                      <Text key={r.callId} color={r.isError ? "red" : "blueBright"}>
                         {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
                       </Text>
                     ))}
@@ -302,7 +320,17 @@ export const ChatUI = (props: ChatUIProps) => {
               </Box>
             ))}
 
-            {props.isRunning && <Text>{DIM}...{RESET}</Text>}
+                        {/* Consolidated thinking indicator — only one source of truth */}
+          {(props.isRunning ||
+            props.messages.some(
+              (m) => m.thinking && m.role === "assistant",
+            ) ||
+            props.messages.some((m) => m.content === "...")) && (
+            <Box key="thinking-indicator" flexDirection="row" alignItems="center" marginTop={1}>
+              <Text color="cyan">▶ </Text>
+              <Text>{DIM}Thinking...{RESET}</Text>
+            </Box>
+          )}
           </>
         )}
       </Box>

@@ -1,5 +1,5 @@
 {
   "provider": "openrouter",
-  "model": "z-ai/glm-5.3-prime",
+  "model": "xiaomi/mimo-v2.6-flash",
   "baseUrl": "https://api.openai.com/v1"
 }

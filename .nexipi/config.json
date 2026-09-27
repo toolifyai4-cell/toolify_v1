@@ -1,4 +1,4 @@
 {
   "provider": "openrouter",
-  "model": "qwen/qwen3.8-omni-flash"
+  "model": "anthropic/claude-3-5-sonnet-20241022"
 }

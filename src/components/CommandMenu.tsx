@@ -74,9 +74,9 @@ export function CommandMenu({
   const visible = commands.slice(start, start + pageSize);
   const hiddenCount = commands.length - visible.length;
 
-  return (
-    <Box
-      borderStyle="single"
+    return (
+      <Box
+      borderStyle="round"
       borderColor={tokens.border}
       flexDirection="column"
       paddingX={1}
@@ -85,8 +85,8 @@ export function CommandMenu({
       {visible.map((cmd, i) => {
         const absoluteIndex = start + i;
         const active = absoluteIndex === safeSelected;
-        return (
-          <Box
+    return (
+    <Box
             key={cmd.name}
             flexDirection="row"
             flexGrow={1}

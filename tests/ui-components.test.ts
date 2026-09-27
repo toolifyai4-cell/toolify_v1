@@ -342,12 +342,12 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
       },
     ];
     const out = renderChat({ messages });
-    expect(out).toContain("[YOU]");
+    expect(out).toContain("YOU");
     expect(out).toContain("write hello.ts");
-    expect(out).toContain("[AGENT]");
+        expect(out).toContain("NEXIPI");
     expect(out).toContain("Done!");
     expect(out).toContain("Second line");
-    expect(out).toContain("[write_file]");
+    expect(out).toContain("[TOOL] write_file");
     expect(out).toContain('{"path":"hello.ts"}');
     expect(out).toContain("[result]");
     expect(out).toContain("Wrote 12 bytes to hello.ts");
