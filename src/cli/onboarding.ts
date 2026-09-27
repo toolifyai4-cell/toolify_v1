@@ -10,7 +10,7 @@ export async function startOnboarding(workspace: string): Promise<ToolifyConfig>
   const ask = (q: string): Promise<string> => new Promise((res) => rl.question(q, (a) => res(a.trim())));
 
   console.log("");
-  console.log("  TOOLIFY - your AI coding agent in the terminal");
+  console.log("  NEXIPI - your AI coding agent in the terminal");
   console.log("  Welcome! Sign in to get started.");
   console.log("");
   await ask("  Press Enter to begin...");
@@ -19,7 +19,7 @@ export async function startOnboarding(workspace: string): Promise<ToolifyConfig>
   let session = loadAuthSession(workspace);
   while (!isAuthSessionValid(session)) {
     console.log("");
-    console.log("  Sign in is required to use TOOLIFY.");
+    console.log("  Sign in is required to use NEXIPI.");
     console.log("  1. Sign in with Google");
     console.log("  2. Sign in with GitHub");
     const authChoice = await ask("  > ");

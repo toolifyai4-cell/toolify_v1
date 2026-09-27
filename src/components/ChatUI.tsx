@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text, useCursor, useInput, useStdout, useWindowSize } from "ink";
+import Spinner from "ink-spinner";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
 import { MarkdownText } from "./MarkdownText.js";
@@ -320,15 +321,15 @@ export const ChatUI = (props: ChatUIProps) => {
               </Box>
             ))}
 
-                        {/* Consolidated thinking indicator — only one source of truth */}
+                                    {/* Consolidated thinking indicator — only one source of truth */}
           {(props.isRunning ||
             props.messages.some(
               (m) => m.thinking && m.role === "assistant",
             ) ||
             props.messages.some((m) => m.content === "...")) && (
             <Box key="thinking-indicator" flexDirection="row" alignItems="center" marginTop={1}>
-              <Text color="cyan">▶ </Text>
-              <Text>{DIM}Thinking...{RESET}</Text>
+              <Spinner type="dots" />
+              <Text color="gray">Thinking... (esc to cancel)</Text>
             </Box>
           )}
           </>
@@ -350,7 +351,7 @@ export const ChatUI = (props: ChatUIProps) => {
         paddingX={1}
       >
         <Box alignItems="center">
-          <Text>{BLUE_BRIGHT}You {RESET}</Text>
+                    <Text>{BLUE_BRIGHT}You {RESET}</Text>
           <Text>
             {inputValue.length > 0 ? (
               <><Text>{inputValue}</Text>{blink && <Text bold color="cyan">█</Text>}</>

@@ -164,7 +164,7 @@ function printEventHuman(e: unknown): void {
   const ev = e as { type: string; [k: string]: unknown };
   switch (ev.type) {
     case "assistant_message":
-      console.log(`\nTOOLIFY: ${ev.content}`);
+      console.log(`\nNEXIPI: ${ev.content}`);
       break;
     case "tool_started": {
       const call = ev.call as {
