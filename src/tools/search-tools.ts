@@ -5,11 +5,36 @@ import { type PathGuard, globToRegExp } from "./fs-tools.js";
 const MAX_WALK_DEPTH = 8;
 const IGNORED_DIRS = ["node_modules", ".git", "dist", ".toolify"];
 
+/**
+ * Strip wrapping quotes/whitespace from a model-supplied pattern.
+ *
+ * Weaker models frequently emit a pattern with the quotes *inside* the string
+ * value, e.g. a double-quoted glob whose quotes end up as literal characters.
+ * Without this, glob matching treats those quotes as part of the filename and
+ * reports "No files matched", wasting a whole agent turn.
+ *
+ * Only symmetric wrapping quotes are removed, so a legitimate pattern that
+ * merely contains a quote internally is left untouched.
+ */
+export function normalizePattern(raw: string): string {
+  let p = raw.trim();
+  for (let i = 0; i < 2; i++) {
+    const first = p[0];
+    const last = p[p.length - 1];
+    const isQuote =
+      (first === '"' && last === '"') || (first === "'" && last === "'");
+    if (!isQuote || p.length < 2) break;
+    p = p.slice(1, -1).trim();
+  }
+  return p;
+}
+
 export async function globTool(
   guard: PathGuard,
   input: { pattern: string },
 ): Promise<string> {
-  const pattern = input.pattern.toLowerCase();
+  const rawPattern = normalizePattern(input.pattern);
+  const pattern = rawPattern.toLowerCase();
   const files: string[] = [];
 
   async function walk(dir: string, depth: number): Promise<void> {
@@ -47,7 +72,7 @@ export async function globTool(
   void readdir;
   return files.length > 0
     ? files.slice(0, 500).join("\n")
-    : `No files matched pattern "${input.pattern}"`;
+    : `No files matched pattern "${rawPattern}"`;
 }
 
 export async function grepTool(

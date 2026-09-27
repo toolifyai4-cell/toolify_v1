@@ -10,6 +10,15 @@ export class CostMeter {
 
   constructor(private readonly pricing: ModelPricing) {}
 
+  /**
+   * True when no real price is known for this model, so `costUsd` is 0 because
+   * the price is UNKNOWN rather than because the model is free. Callers should
+   * surface "pricing unknown" instead of a misleading `$0.0000`.
+   */
+  get pricingUnknown(): boolean {
+    return this.pricing.inputPerM <= 0 && this.pricing.outputPerM <= 0;
+  }
+
   add(u: Usage): { usage: Usage; costUsd: number } {
     this.usage.inputTokens += u.inputTokens;
     this.usage.outputTokens += u.outputTokens;

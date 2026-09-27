@@ -15,6 +15,7 @@ import {
   isDoneFrame,
   iterSse,
 } from "../providers/streaming.js";
+import { resolvePricing } from "./pricing.js";
 
 /**
  * Anthropic native adapter (Messages API).
@@ -28,7 +29,7 @@ export class AnthropicAdapter implements ModelAdapter {
   constructor(opts: { apiKey: string; model: string; pricing?: ModelPricing }) {
     this.apiKey = opts.apiKey;
     this.modelId = opts.model;
-    this.pricing = opts.pricing ?? { inputPerM: 3, outputPerM: 15 };
+    this.pricing = resolvePricing(opts.model, opts.pricing);
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {

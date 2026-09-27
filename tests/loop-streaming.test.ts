@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Loop-level tests for the streaming path.
  *
  * Verifies that when a provider is streaming-capable the loop actually uses

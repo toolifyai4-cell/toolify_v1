@@ -1,5 +1,96 @@
 # Known Limitations
 
+## Phase 2.1 — Bug fixes from the live smoke test
+
+The live streaming smoke test surfaced four real defects. All are fixed; the
+notes below record what to watch for going forward.
+
+### 1. Tool-calling wire format (was: HTTP 400 on every tool turn)
+
+`toWireMessages()` returns an **array**, and the request body must therefore use
+`flatMap`, not `map(...spread)`. Using `map` nests an array inside `messages`,
+which OpenAI-compatible endpoints reject with
+`messages.N: expected object, received array`.
+
+This broke **every** turn that fed a tool result back — i.e. every real coding
+task. Only conversational turns (which use no tools) worked.
+
+It escaped the test suite because every tool-loop test drives `MockModelAdapter`,
+which never serializes to the wire, and the one HTTP-level fixture
+(`usage-flow`) never returns tool calls. `tests/wire-format.test.ts` now asserts
+the serialized body is structurally flat.
+
+**Watch for:** any new provider adapter that builds a `messages` array by hand.
+
+### 2. Usage was synced before the run
+
+`chat.tsx` copied `deps.meter.usage` into the persistent meter *before*
+`loop.run()`. Because the container builds a fresh `CostMeter` per turn, that
+always copied `{0, 0}` — so the status bar and `/usage` reported 0 while the
+session log recorded real usage. The sync now happens in `finally`, after the run.
+
+**Watch for:** any other consumer of `deps.meter` that reads it outside the run.
+
+### 3. Orphaned thinking placeholders
+
+`onFirstToken` was declared in `StreamCallbacks` but never wired in `chat.tsx`,
+and the cleanup only inspected the *last* message. Any turn that produced no
+assistant text (tool-only, error, or abort) stranded a permanent `...` in the
+transcript, and they accumulated across turns.
+
+Now `onFirstToken` clears the placeholder, and the `finally` cleanup removes
+**any** empty `thinking` message rather than only a trailing one.
+
+**Watch for:** new renderers that display a pending state without a guaranteed
+teardown path.
+
+### 4. Glob received literal quotes from the model
+
+Weaker models emit patterns like `"**/*.java"` where the quotes are part of the
+string value. `normalizePattern()` now strips symmetric wrapping quotes (and
+whitespace) before matching. Only symmetric wraps are removed, so a pattern with
+an internal quote is untouched.
+
+### 5. Pricing: unknown models read as free
+
+Unknown models previously resolved to `{inputPerM: 0, outputPerM: 0}`, so `/usage`
+showed `$0.0000` — indistinguishable from a genuinely free model. `src/models/pricing.ts`
+now returns an explicit `UNKNOWN_PRICING` marker, `CostMeter.pricingUnknown`
+exposes it, and `/usage` prints "Cost: unknown" instead of a misleading zero.
+
+Setting a `pricing` block in `.toolify/config.json` still overrides everything.
+
+### 6. `stream_options` is an OpenAI-ism some providers reject
+
+Streaming requests send `stream_options: { include_usage: true }` to get token
+accounting in the final chunk. Z.AI/GLM strictly validates the request body and
+documents only six parameters (`max_tokens`, `temperature`, `top_p`, `do_sample`,
+`thinking.type`, `response_format.type`) — it rejects the unknown field with a
+generic `Invalid API parameter` (code 1210).
+
+Rather than hardcoding a vendor exception, the adapter **probes optimistically**:
+on a 400 while the field is in play it withdraws it, retries once, and remembers
+the result for the rest of the session (emitting one warning). The turn then
+succeeds with **usage data absent** — a soft degradation instead of a hard
+failure.
+
+Consequences for such providers:
+- Streaming turns report `inputTokens: 0` / `outputTokens: 0`.
+- The cost meter under-reports for those turns.
+
+`streamUsage: false` can be passed to the adapter to opt out up front and skip
+the probe round-trip entirely.
+
+**Caveat:** the 400 does not name the offending field, so this is a
+guess-and-fallback rather than a precise diagnosis. If a provider rejects a
+*different* unknown field, the same fallback will trigger, and the error message
+notes that the retry already happened.
+
+**Watch for:** other strictly-validating gateways. The fallback is generic, so
+they are covered automatically, but each will lose stream-mode usage.
+
+---
+
 ## Phase 2 — Current constraints and future work
 
 ### 0. Streaming caveats

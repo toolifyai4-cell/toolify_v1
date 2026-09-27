@@ -1,7 +1,5 @@
 {
   "provider": "openrouter",
-  "model": "qwen/qwen3.8-omni-flash",
-  "baseUrl": "https://api.openai.com/v1",
-  "theme": "toolify-dark",
-  "autoUpdate": true
+  "model": "z-ai/glm-5.3-prime",
+  "baseUrl": "https://api.openai.com/v1"
 }

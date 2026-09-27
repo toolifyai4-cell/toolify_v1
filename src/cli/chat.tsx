@@ -248,9 +248,12 @@ export function ChatHost({
         }
         else if (cmd === "/usage") {
           const m = meterRef.current!;
+          const cost = m.pricingUnknown
+            ? "Cost: unknown (set `pricing` in .toolify/config.json)"
+            : `Cost: $${m.costUsd.toFixed(4)}`;
           mutateMessages((prev) => [...prev, {
             role: "assistant",
-            content: `Tokens: ${m.usage.inputTokens} in / ${m.usage.outputTokens} out | Cost: $${m.costUsd.toFixed(4)} | Turns: ${turnCountRef.current}`,
+            content: `Tokens: ${m.usage.inputTokens} in / ${m.usage.outputTokens} out | ${cost} | Turns: ${turnCountRef.current}`,
           }]);
         }
         else if (cmd === "/history") {
@@ -292,6 +295,18 @@ export function ChatHost({
         sessionId: sessionsRef.current?.id,
         approval,
         onStream: {
+          // Clear the "thinking" placeholder as soon as the provider produces
+          // its first token. Without this the placeholder is only cleared
+          // incidentally, by onAssistantText appending into it — so a turn that
+          // yields no assistant text (tool-only, error, or abort) would strand
+          // a permanent "..." in the transcript.
+          onFirstToken: () => {
+            mutateMessages((prev) =>
+              prev.map((m) =>
+                m.role === "assistant" && m.thinking ? { ...m, thinking: false } : m,
+              ),
+            );
+          },
           onAssistantText: (text) => {
             mutateMessages((prev) => {
               const last = prev[prev.length - 1];
@@ -346,9 +361,6 @@ export function ChatHost({
       await deps.sessions.init();
       await deps.checkpoints.init();
 
-      // Sync usage into the persistent meter ref for the /usage command.
-      meterRef.current!.add(deps.meter.usage);
-
       const loop = createAgentLoop(deps);
 
       try {
@@ -360,15 +372,23 @@ export function ChatHost({
           // The request was aborted — onError already fired the banner.
         }
       } finally {
+        // Sync usage into the persistent meter ref for /usage and the status bar.
+        // This MUST run after loop.run(): the container builds a fresh CostMeter
+        // each turn, and usage only accumulates into it during the run. Syncing
+        // before the run (the old behaviour) always copied {0, 0}, so the UI
+        // showed "Tokens: 0" even though the session log recorded real usage.
+        meterRef.current!.add(deps.meter.usage);
+        setTurnCount((t) => t); // re-render so the status bar refreshes
         setIsRunning(false);
         abortControllerRef.current = null;
-        // Clear any stale thinking placeholder that wasn't cleared by a token.
+        // Drop ANY leftover thinking placeholder, not just a trailing one.
+        // A turn that produces no assistant text (tool-only, error, or abort)
+        // would otherwise strand its "..." indicator permanently on screen.
         mutateMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === "assistant" && last.thinking) {
-            return [...prev.slice(0, -1), { ...last, thinking: false }];
-          }
-          return prev;
+          const cleaned = prev.filter(
+            (m) => !(m.role === "assistant" && m.thinking && !m.content),
+          );
+          return cleaned.length === prev.length ? prev : cleaned;
         });
       }
     },
@@ -445,8 +465,6 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
   patchTtyForFullScreen();
   // Wipe the entry flow's final frame so the chat starts on a clean screen.
   clearScreen();
-  // Enable terminal mouse tracking so users can select + copy text with the mouse.
-  enableMouseTracking();
 
   const { unmount } = render(
     React.createElement(ThemeProvider, {
@@ -470,23 +488,9 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
     },
   );
   process.on("SIGINT", () => {
-    disableMouseTracking();
     unmount();
     process.exit(0);
   });
-  process.on("exit", () => {
-    disableMouseTracking();
-  });
-}
-
-/** Enable terminal mouse tracking (allows mouse-based text selection + copy). */
-export function enableMouseTracking(): void {
-  process.stdout.write("\x1b[?1000h\x1b[?1006h");
-}
-
-/** Disable terminal mouse tracking (restore normal terminal behavior). */
-export function disableMouseTracking(): void {
-  try { process.stdout.write("\x1b[?1000l\x1b[?1006l"); } catch { /* ignore */ }
 }
 
 

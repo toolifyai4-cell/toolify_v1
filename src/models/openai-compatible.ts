@@ -11,38 +11,12 @@ import type {
   Usage,
 } from "../agent/types.js";
 import { updateQuotaFromHeaders } from "./quota-tracker.js";
+import { resolvePricing } from "./pricing.js";
 import {
   ToolCallAccumulator,
   isDoneFrame,
   iterSse,
 } from "../providers/streaming.js";
-
-/**
- * Static default pricing table — used when ModelPricing config is not set.
- * These are ESTIMATES that will drift from reality. Marked with isEstimate=true.
- * Update when providers change their pricing.
- */
-const DEFAULT_MODEL_PRICING: Record<string, ModelPricing> = {
-  "gpt-4o": { inputPerM: 0.000005, outputPerM: 0.000015, isEstimate: true },
-  "gpt-4o-mini": { inputPerM: 0.00000015, outputPerM: 0.0000006, isEstimate: true },
-  "gpt-4-turbo": { inputPerM: 0.00001, outputPerM: 0.00003, isEstimate: true },
-  "gpt-3.5-turbo": { inputPerM: 0.0000005, outputPerM: 0.0000015, isEstimate: true },
-  "claude-3-5-sonnet-20241022": { inputPerM: 0.000003, outputPerM: 0.000015, isEstimate: true },
-  "claude-3-opus-20240229": { inputPerM: 0.000015, outputPerM: 0.000075, isEstimate: true },
-  "claude-sonnet-4-20250514": { inputPerM: 0.000003, outputPerM: 0.000015, isEstimate: true },
-  "gemini-1.5-pro": { inputPerM: 0.00000125, outputPerM: 0.000005, isEstimate: true },
-  "gemini-1.5-flash": { inputPerM: 0.000000075, outputPerM: 0.0000003, isEstimate: true },
-  "gemini-2.0-flash": { inputPerM: 0.0000001, outputPerM: 0.0000004, isEstimate: true },
-  "gemini-2.5-pro": { inputPerM: 0.00000125, outputPerM: 0.000005, isEstimate: true },
-  "gemini-2.5-flash": { inputPerM: 0.00000015, outputPerM: 0.0000006, isEstimate: true },
-  "deepseek-chat": { inputPerM: 0.00000014, outputPerM: 0.00000028, isEstimate: true },
-  "deepseek-reasoner": { inputPerM: 0.00000055, outputPerM: 0.00000219, isEstimate: true },
-  "llama-3.3-70b-versatile": { inputPerM: 0.00000059, outputPerM: 0.00000079, isEstimate: true },
-  "llama-3.1-8b-instant": { inputPerM: 0.00000005, outputPerM: 0.00000008, isEstimate: true },
-  "mixtral-8x7b-32768": { inputPerM: 0.00000027, outputPerM: 0.00000027, isEstimate: true },
-  "sonar-pro": { inputPerM: 0.000001, outputPerM: 0.000001, isEstimate: true },
-  "sonar": { inputPerM: 0.000001, outputPerM: 0.000001, isEstimate: true },
-};
 
 /**
  * OpenAI-compatible adapter (OpenAI, OpenRouter, Ollama, LM Studio, etc.).
@@ -58,6 +32,21 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
   readonly pricing: ModelPricing;
   readonly providerId: string;
 
+  /**
+   * Whether this endpoint accepts `stream_options: { include_usage: true }`.
+   *
+   * Most OpenAI-compatible providers do, and we rely on it to get token
+   * accounting in stream mode. Some (notably Z.AI/GLM) strictly validate the
+   * request body and reject unknown fields with a generic
+   * `Invalid API parameter` (code 1210), which would otherwise fail the whole
+   * turn. We probe optimistically and, on a 400, retry once without the field
+   * and remember the result so we stop paying for a doomed request every turn.
+   */
+  private supportsStreamUsage = true;
+
+  /** One-time warning so a silently-degraded cost meter is at least visible. */
+  private warnedAboutStreamUsage = false;
+
   constructor(opts: {
     baseUrl: string;
     apiKey?: string;
@@ -65,16 +54,25 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     name?: string;
     pricing?: ModelPricing;
     providerId?: string;
+    /** Force stream-usage on/off, skipping the probe (set false to opt out). */
+    streamUsage?: boolean;
   }) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.modelId = opts.model;
     this.name = opts.name ?? "openai-compatible";
     this.apiKey = opts.apiKey;
-    // Use explicit pricing if provided, otherwise look up defaults (marked as estimates)
-    this.pricing = opts.pricing ?? DEFAULT_MODEL_PRICING[opts.model] ?? { inputPerM: 0, outputPerM: 0 };
+    // Explicit config wins, then the shared estimate table, then an explicit
+    // "unknown" marker (never a silent $0 that reads as "free").
+    this.pricing = resolvePricing(opts.model, opts.pricing);
     this.providerId = opts.providerId ?? "unknown";
+    if (opts.streamUsage !== undefined) this.supportsStreamUsage = opts.streamUsage;
   }
   private readonly apiKey?: string;
+
+  /** True when streaming turns will carry token usage for this endpoint. */
+  get streamUsageAvailable(): boolean {
+    return this.supportsStreamUsage;
+  }
 
   chat(req: ChatRequest): Promise<ChatResponse> {
     return this.request(req);
@@ -92,7 +90,8 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
       max_tokens: req.maxOutputTokens ?? 4096,
       messages: [
         { role: "system", content: req.system },
-        ...req.messages.map((m) => this.toWireMessage(m)),
+        // flatMap, not map+spread: tool-result turns expand to N messages.
+        ...req.messages.flatMap((m) => this.toWireMessages(m)),
       ],
       ...(req.tools.length > 0
         ? { tools: req.tools.map((t) => this.toWireTool(t)) }
@@ -154,7 +153,16 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
     return { text, toolCalls, usage, finishReason, providerId: this.providerId };
   }
 
-  private toWireMessage(m: ModelMessage): unknown {
+  /**
+   * Translate one internal `ModelMessage` into zero or more OpenAI wire messages.
+   *
+   * Returns an **array** because a tool-result turn expands into one
+   * `role: "tool"` message per result. Callers must `flatMap` this into the
+   * `messages` array — spreading it directly would nest an array inside
+   * `messages`, which OpenAI-compatible endpoints reject with
+   * `messages.N: expected object, received array`.
+   */
+  private toWireMessages(m: ModelMessage): unknown[] {
     if (m.toolResults && m.toolResults.length > 0) {
       // Tool results are fed back as individual role:"tool" messages.
       return m.toolResults.map((r) => ({
@@ -164,17 +172,19 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
       }));
     }
     if (m.toolCalls && m.toolCalls.length > 0) {
-      return {
-        role: "assistant",
-        content: m.content || null,
-        tool_calls: m.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: "tool_call" as const,
-          function: { name: tc.name, arguments: JSON.stringify(tc.input) },
-        })),
-      };
+      return [
+        {
+          role: "assistant",
+          content: m.content || null,
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "tool_call" as const,
+            function: { name: tc.name, arguments: JSON.stringify(tc.input) },
+          })),
+        },
+      ];
     }
-    return { role: m.role, content: m.content };
+    return [{ role: m.role, content: m.content }];
   }
 
   private toWireTool(t: ToolSchema): unknown {
@@ -211,30 +221,66 @@ export class OpenAICompatibleAdapter implements ModelAdapter {
       max_tokens: req.maxOutputTokens ?? 4096,
       messages: [
         { role: "system", content: req.system },
-        ...req.messages.map((m) => this.toWireMessage(m)),
+        // flatMap, not map+spread: tool-result turns expand to N messages.
+        ...req.messages.flatMap((m) => this.toWireMessages(m)),
       ],
       ...(req.tools.length > 0
         ? { tools: req.tools.map((t) => this.toWireTool(t)) }
         : {}),
     };
     // Ask for token accounting in the final chunk. Providers that do not know
-    // this field ignore it; those that do return usage we would otherwise lose.
-    body.stream_options = { include_usage: true };
+    // this field may reject the whole request, so it is probed and withdrawn
+    // on a 400 (see `supportsStreamUsage`).
+    if (this.supportsStreamUsage) {
+      body.stream_options = { include_usage: true };
+    }
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    let res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: req.signal,
     });
 
+    // Capability fallback: a 400 while `stream_options` is in play most likely
+    // means this endpoint rejects the field (Z.AI/GLM does, with code 1210).
+    // Retry once without it, remember the answer, and carry on with degraded
+    // (absent) usage rather than failing the turn outright.
+    if (!res.ok && res.status === 400 && this.supportsStreamUsage) {
+      this.supportsStreamUsage = false;
+      delete body.stream_options;
+      try {
+        res = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: req.signal,
+        });
+        if (res.ok && !this.warnedAboutStreamUsage) {
+          this.warnedAboutStreamUsage = true;
+          console.warn(
+            `[toolify] ${this.name} (${this.modelId}) does not accept "stream_options"; ` +
+              "token usage is unavailable for streaming turns in this session.",
+          );
+        }
+      } catch {
+        // Fall through: the original 400 is reported below.
+      }
+    }
+
     if (!res.ok) {
       const errText = await res.text().catch(() => res.statusText);
+      const hint =
+        res.status === 400 && !this.supportsStreamUsage
+          ? " (already retried without stream_options)"
+          : "";
       yield {
         type: "error",
         error: {
           code: classifyHttpStatus(res.status),
-          message: `Provider error ${res.status} from ${this.name} (${this.modelId}): ${errText.slice(0, 500)}`,
+          message:
+            `Provider error ${res.status} from ${this.name} (${this.modelId})${hint}: ` +
+            errText.slice(0, 500),
         },
       };
       return;

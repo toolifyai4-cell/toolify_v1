@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Streaming tests for the two real provider adapters and the stream consumer.
  *
  * `fetch` is stubbed with a hand-built SSE body so these exercise the actual
