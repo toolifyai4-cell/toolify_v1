@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolveApiKeySync, resolveBaseUrlSync } from "../utils/config.js";
 import { Command } from "commander";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -309,21 +309,90 @@ export function buildProgram(): Command {
         console.log(JSON.stringify({ type: "run_result", ...result, costUsd: deps.meter.costUsd }));
       } else {
         console.log(
-          `\n[TOOLIFY finished: ${result.finishReason} | iterations: ${result.iterations} | verification rounds: ${result.verificationRounds} | cost: $${deps.meter.costUsd.toFixed(4)}]`,
+          `\n[NEXIPI finished: ${result.finishReason} | iterations: ${result.iterations} | verification rounds: ${result.verificationRounds} | cost: $${deps.meter.costUsd.toFixed(4)}]`,
         );
         console.log(`[session log: ${deps.sessions.sessionDir}\events.jsonl]`);
       }
       process.exitCode = result.finishReason === "stop" ? 0 : 1;
     });
 
-  return program;
+    return program;
+}
+
+/**
+ * Resolve the effective workspace directory from (in priority order):
+ *   1. an explicit `--workspace <dir>` flag,
+ *   2. the NEXIPI_WORKSPACE env var,
+ *   3. auto-detection by walking up from `fallbackCwd` for a project marker,
+ *   4. the cwd itself when no marker is found anywhere.
+ */
+export type WorkspaceSource = "flag" | "env" | "cwd" | "detected";
+
+export interface ResolvedWorkspace {
+  readonly workspace: string;
+  readonly source: WorkspaceSource;
+}
+
+const PROJECT_MARKERS = ["package.json", ".git", ".nexipi"];
+
+function hasProjectMarker(dir: string): boolean {
+  return PROJECT_MARKERS.some((m) => existsSync(resolve(dir, m)));
+}
+
+export function resolveWorkspace(
+  flagDir?: string,
+  fallbackCwd: string = process.cwd(),
+): ResolvedWorkspace {
+  if (flagDir) return { workspace: resolve(flagDir), source: "flag" };
+  const env = process.env.NEXIPI_WORKSPACE;
+  if (typeof env === "string" && env.trim() !== "") {
+    return { workspace: resolve(env), source: "env" };
+  }
+  const start = resolve(fallbackCwd);
+  let dir = start;
+  while (true) {
+    if (hasProjectMarker(dir)) {
+      return { workspace: dir, source: dir === start ? "cwd" : "detected" };
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { workspace: start, source: "cwd" };
+}
+
+/**
+ * Warn about a chosen workspace that looks wrong: no project markers at all, or
+ * a path that looks like an OS temporary directory. Returns `[]` for a healthy
+ * project folder so callers can render zero warnings.
+ */
+export function workspaceWarnings(dir: string): string[] {
+  const abs = resolve(dir);
+  const warnings: string[] = [];
+  if (!hasProjectMarker(abs)) {
+    warnings.push(
+      `Directory "${abs}" does not look like a project folder (no package.json, .git, or .nexipi found).`,
+    );
+    warnings.push(`Run with --workspace <dir> to point the agent at the right place.`);
+  }
+  if (isTempPath(abs)) {
+    warnings.push(
+      `"${abs}" looks like a temporary directory; files here may be cleaned up unexpectedly.`,
+    );
+  }
+  return warnings;
+}
+
+function isTempPath(abs: string): boolean {
+  const low = abs.toLowerCase().replace(/\\/g, "/");
+  return low === "/tmp" || low === "/temp" || low.includes("/tmp/") || low.includes("/temp/");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   buildProgram()
     .parseAsync(process.argv)
     .catch((err) => {
-      console.error(`toolify: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`nexipi: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     });
 }

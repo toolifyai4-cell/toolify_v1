@@ -1,6 +1,5 @@
-import React from "react";
-import { Box, Text, useCursor, useInput, useStdout, useWindowSize } from "ink";
-import Spinner from "ink-spinner";
+import React, { useMemo, useState } from "react";
+import { Box, Text, useCursor, useInput, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
 import { MarkdownText } from "./MarkdownText.js";
@@ -108,38 +107,101 @@ export function isErrorBanner(content: string): boolean {
   );
 }
 
+/**
+ * Render a single chat message's content (role label + markdown + tool calls/results).
+ */
+function renderMessageContent(m: ChatMessage): React.ReactNode {
+  return (
+    <>
+      {m.role === "user" ? (
+        <Box flexDirection="column">
+          <Text>
+            <Text backgroundColor="blue" color="black" bold> YOU </Text>
+          </Text>
+          <MarkdownText content={m.content} />
+        </Box>
+      ) : isErrorBanner(m.content) ? (
+        <Text color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text>
+            {m.content && (
+              <Text backgroundColor="magenta" color="black" bold>
+                {" "}NEXIPI{" "}
+              </Text>
+            )}
+          </Text>
+          {m.content ? (
+            <MarkdownText content={m.content} />
+          ) : null}
+        </Box>
+      )}
 
-// Full-screen ChatUI -- two-stage UX (Cline parity):
-//   idle: landing prompt + hint line; active: streamed messages; status bar pinned bottom.
-// Mode markers: a filled ball marks the active mode (Tab switches).
+      {m.toolCalls && m.toolCalls.length > 0 && (
+        <Box
+          borderStyle="round"
+          borderColor="gray"
+          paddingX={1}
+          marginLeft={1}
+          marginTop={1}
+          flexDirection="column"
+        >
+          {m.toolCalls.map((tc) => (
+            <Text key={tc.id} dimColor>
+              {"[TOOL] "}{tc.name} {" "}{JSON.stringify(tc.input).slice(0, 120)}
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {m.toolResults && m.toolResults.length > 0 && (
+        <Box
+          borderStyle="round"
+          borderColor="gray"
+          paddingX={1}
+          marginLeft={1}
+          marginTop={1}
+          flexDirection="column"
+        >
+          {m.toolResults.map((r) => (
+            <Text key={r.callId} color={r.isError ? "red" : "blueBright"}>
+              {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
+            </Text>
+          ))}
+        </Box>
+      )}
+    </>
+  );
+}
+
 export const ChatUI = (props: ChatUIProps) => {
-  // Ink only ever sets a WIDTH on the root yoga node, so percentage heights
-  // never resolve to the terminal height. Read the real row count instead - it
-  // is what pins the input bar and status bar to the bottom of the screen.
-  const { rows } = useWindowSize();
-  // Guard: rows can be undefined/0 on patched TTYs; without this the
-  // root collapses to content height and the input bar floats at the top.
-  const height = typeof rows === "number" && rows > 0 ? rows : 24;
   useCursor();
-  // On Windows fullscreen (render.sync path), useCursor() alone doesn't emit
-  // the hide-cursor escape, so explicitly hide the native terminal caret.
   const { stdout } = useStdout();
+  
   React.useEffect(() => {
     stdout.write("\x1B[?25l");
     return () => { stdout.write("\x1B[?25h"); };
   }, [stdout]);
+
+  const height =
+    typeof stdout.rows === "number" && stdout.rows > 0 ? stdout.rows : 24;
+
   const [inputValue, setInputValue] = React.useState("");
   const [slashOpen, setSlashOpen] = React.useState(false);
   const [slashIndex, setSlashIndex] = React.useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
   const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
   const slashCommands = React.useMemo(
     () => (slashOpen ? filterSlashCommands(slashQuery) : []),
     [slashOpen, slashQuery],
   );
+
   const closeSlashMenu = React.useCallback(() => {
     setSlashOpen(false);
     setSlashIndex(0);
   }, []);
+
   React.useEffect(() => {
     if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
   }, [slashOpen, slashCommands.length]);
@@ -150,28 +212,26 @@ export const ChatUI = (props: ChatUIProps) => {
     return () => clearInterval(t);
   }, []);
 
-
-
   const settingsActive = props.settingsOpen === true && typeof props.onSettingsSave === "function" && props.settingsInitial !== undefined;
   const modelsActive = props.modelsOpen === true && typeof props.onModelsCommit === "function";
+
   useInput((ch, key) => {
     if (props.settingsOpen === true || props.modelsOpen === true) return;
 
-    // Quit shortcuts — checked before the backspace handler so that
-    // Ctrl+Shift+Backspace is NOT consumed as a character delete.
-    // 1. Ctrl+/ arrives as 0x1f in legacy xterm/VS Code (no key.ctrl flag
-    //    from ink, so we test the raw byte directly).
-    // 2. Ctrl+Shift+Backspace arrives via the kitty keyboard protocol as
-    //    \x1b[127;6u, which ink decodes to key.ctrl=true, key.shift=true,
-    //    key.backspace=true.  Plain Backspace (0x7f) and Ctrl+Backspace
-    //    (\x1b[127;5u) have key.shift=false, so they must NOT trigger this.
     if (ch === "\x1f" || (key.ctrl && key.shift && key.backspace)) {
       props.onExit();
       return;
     }
 
-    // Do NOT intercept Ctrl+C / Ctrl+V — let the terminal handle copy/paste natively.
-    // Users can exit via the /quit command, Ctrl+/ or Ctrl+Shift+Backspace.
+    if (key.pageUp || (key.shift && key.upArrow)) {
+      setScrollOffset((prev) => Math.min(prev + 3, Math.max(0, props.messages.length - 1)));
+      return;
+    }
+    if (key.pageDown || (key.shift && key.downArrow)) {
+      setScrollOffset((prev) => Math.max(0, prev - 3));
+      return;
+    }
+
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
     if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
     if (key.escape) {
@@ -222,16 +282,36 @@ export const ChatUI = (props: ChatUIProps) => {
         }
         return next;
       });
-      // "/" opens the floating CommandMenu (open/close handled above).
       return;
     }
   });
 
-  // SettingsMenu renders inline above the input bar (no full-screen takeover).
+  const isChatView = !modelsActive && !settingsActive;
+  const showThinking =
+    isChatView &&
+    (props.isRunning ||
+      props.messages.some(
+        (m) => m.thinking && m.role === "assistant",
+      ) ||
+      props.messages.some((m) => m.content === "..."));
+
+  // HARD-CODED ROW BUDGET: 6 rows total for Bottom Panel
+  const BOTTOM_PANEL_HEIGHT = 6;
+  const availableChatRows = Math.max(1, height - BOTTOM_PANEL_HEIGHT);
+
+  // Filter messages to prevent terminal viewport scrollbar from swallowing the UI
+  const visibleMessages = useMemo(() => {
+    if (props.messages.length === 0) return [];
+    const maxVisible = Math.max(1, availableChatRows - 2);
+    const startIndex = Math.max(0, props.messages.length - maxVisible - scrollOffset);
+    const endIndex = Math.min(props.messages.length, startIndex + maxVisible);
+    return props.messages.slice(startIndex, endIndex);
+  }, [props.messages, availableChatRows, scrollOffset]);
 
   return (
     <Box flexDirection="column" height={height}>
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      {/* 1. CHAT MESSAGES AREA (STRICT BOUNDED HEIGHT) */}
+      <Box flexDirection="column" height={availableChatRows} overflow="hidden">
         {modelsActive ? (
           <ModelsTab
             models={props.models ?? []}
@@ -254,173 +334,120 @@ export const ChatUI = (props: ChatUIProps) => {
         ) : (
           <>
             {props.messages.length === 0 && !props.isRunning && (
-              <Box justifyContent="center" paddingY={4}>
+              <Box paddingTop={2}>
                 <Text>{CYAN}What can I do for you?{RESET}</Text>
               </Box>
-            )}            {props.messages.map((m, i) => (
+            )}
+            
+            {visibleMessages.map((m, i) => (
               <Box key={i} flexDirection="column" paddingBottom={1}>
-                {m.role === "user" ? (
-                  <Box flexDirection="column">
-                    <Text>
-                      <Text backgroundColor="blue" color="black" bold> YOU </Text>
-                      {" "}
-                      <MarkdownText content={m.content} />
-                    </Text>
-                  </Box>
-                ) : isErrorBanner(m.content) ? (
-                  <Text color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
-                ) : (
-                  <Box flexDirection="column">
-                    <Text>
-                      {m.content && (
-                        <Text backgroundColor="magenta" color="black" bold>
-                          {" "}NEXIPI{" "}
-                        </Text>
-                      )}
-                      {" "}
-                      {m.content ? (
-                        <MarkdownText content={m.content} />
-                      ) : null}
-                    </Text>
-                  </Box>
-                )}
-
-                {m.toolCalls && m.toolCalls.length > 0 && (
-                  <Box
-                    borderStyle="round"
-                    borderColor="gray"
-                    paddingX={1}
-                    marginLeft={1}
-                    marginTop={1}
-                    flexDirection="column"
-                  >
-                    {m.toolCalls.map((tc) => (
-                      <Text key={tc.id} dimColor>
-                        {"[TOOL] "}{tc.name} {" "}{JSON.stringify(tc.input).slice(0, 120)}
-                      </Text>
-                    ))}
-                  </Box>
-                )}
-
-                {m.toolResults && m.toolResults.length > 0 && (
-                  <Box
-                    borderStyle="round"
-                    borderColor="gray"
-                    paddingX={1}
-                    marginLeft={1}
-                    marginTop={1}
-                    flexDirection="column"
-                  >
-                    {m.toolResults.map((r) => (
-                      <Text key={r.callId} color={r.isError ? "red" : "blueBright"}>
-                        {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
-                      </Text>
-                    ))}
-                  </Box>
-                )}
+                {renderMessageContent(m)}
               </Box>
             ))}
-
-                                    {/* Consolidated thinking indicator — only one source of truth */}
-          {(props.isRunning ||
-            props.messages.some(
-              (m) => m.thinking && m.role === "assistant",
-            ) ||
-            props.messages.some((m) => m.content === "...")) && (
-            <Box key="thinking-indicator" flexDirection="row" alignItems="center" marginTop={1}>
-              <Spinner type="dots" />
-              <Text color="gray">Thinking... (esc to cancel)</Text>
-            </Box>
-          )}
           </>
         )}
       </Box>
 
-      {/* Floating slash-command menu -- separate overlay box directly above the input bar */}
+      {/* Floating Slash-Command Menu */}
       {slashOpen && slashCommands.length > 0 && (
-        <Box marginLeft={1} marginBottom={1}>
+        <Box marginLeft={1} marginBottom={0}>
           <CommandMenu commands={slashCommands} selectedIndex={slashIndex} />
         </Box>
       )}
 
-      {/* Input bar -- visible, bordered, with placeholder and cursor */}
-      <Box
-        borderStyle="round"
-        borderColor="cyan"
-        flexDirection="column"
-        paddingX={1}
-      >
-        <Box alignItems="center">
-                    <Text>{BLUE_BRIGHT}You {RESET}</Text>
-          <Text>
-            {inputValue.length > 0 ? (
-              <><Text>{inputValue}</Text>{blink && <Text bold color="cyan">█</Text>}</>
-            ) : (
-              <>
-                {blink && <Text bold color="cyan">█</Text>}
-                <Text dimColor>Type a message or / for commands...</Text>
-              </>
-            )}
-          </Text>
+      {/* 2. FIXED BOTTOM PANEL */}
+      <Box flexDirection="column" height={BOTTOM_PANEL_HEIGHT}>
+        {/* Input Bar */}
+        <Box
+          borderStyle="round"
+          borderColor="cyan"
+          flexDirection="column"
+          paddingX={1}
+          height={3}
+        >
+          <Box alignItems="center">
+            <Text>{BLUE_BRIGHT}You {RESET}</Text>
+            <Text>
+              {inputValue.length > 0 ? (
+                <><Text>{inputValue}</Text>{blink && <Text bold color="cyan">█</Text>}</>
+              ) : (
+                <>
+                  {blink && <Text bold color="cyan">█</Text>}
+                  <Text dimColor>Type a message or / for commands...</Text>
+                </>
+              )}
+            </Text>
+          </Box>
         </Box>
-      </Box>
-      {/* Hint line */}
-      <Box justifyContent="space-between" paddingX={1} height={3}>
-        <Box flexDirection="column">
-          <Text>
-            <Text>{WHITE}Model: {RESET}</Text>
-            <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.model}</Text>
-            <Text>{DIM} | {RESET}</Text><Text>{WHITE}Tokens: {RESET}</Text>
-            <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.inputTokens + props.status.outputTokens}</Text>
-            {props.status.limitTokens != null && props.status.remainingTokens != null && (
-              <>
-                <Text>{DIM} | {RESET}</Text><Text>{WHITE}Rem: {RESET}</Text>
-                <Text color={props.status.isExhausted ? "red" : "green"}>
-                  {formatTokenCount(props.status.remainingTokens)}
-                  {props.status.limitTokens != null ? `/${formatTokenCount(props.status.limitTokens)}` : ""}
+
+        {/* Status / Hint Bar */}
+        <Box justifyContent="space-between" paddingX={1} height={3}>
+          <Box flexDirection="column">
+            <Text>
+              <Text bold color="white">Model: </Text>
+              <Text color={props.status.isExhausted ? "red" : "cyan"}>{props.status.model}</Text>
+              <Text dimColor> | </Text>
+              <Text bold color="white">Tokens: </Text>
+              <Text color={props.status.isExhausted ? "red" : "cyan"}>
+                {props.status.inputTokens + props.status.outputTokens}
+              </Text>
+              {props.status.limitTokens != null && props.status.remainingTokens != null && (
+                <>
+                  <Text dimColor> | </Text>
+                  <Text bold color="white">Rem: </Text>
+                  <Text color={props.status.isExhausted ? "red" : "green"}>
+                    {formatTokenCount(props.status.remainingTokens)}
+                    {props.status.limitTokens != null ? `/${formatTokenCount(props.status.limitTokens)}` : ""}
+                  </Text>
+                </>
+              )}
+              {props.status.isExhausted && props.status.resetTime != null && (
+                <>
+                  <Text dimColor> | </Text>
+                  <Text color="red">[Quota Exceeded — Resets in {props.status.resetTime}]</Text>
+                </>
+              )}
+              {showThinking && (
+                <>
+                  <Text dimColor> | </Text>
+                  <Text color="yellow">Thinking...</Text>
+                </>
+              )}
+            </Text>
+            <Text dimColor>{props.workspace}</Text>
+            <Text dimColor>
+              <Text color="white">Ctrl+Shift+Backspace</Text>: Quit | <Text color="white">Esc</Text>: Stop/Close
+            </Text>
+          </Box>
+
+          <Box flexDirection="column" alignItems="flex-end" flexShrink={0} paddingLeft={2}>
+            <Text wrap="truncate">
+              {props.mode === "plan" ? (
+                <Text color="yellowBright">Plan [ON]</Text>
+              ) : (
+                <Text dimColor>Plan [OFF]</Text>
+              )}
+              {props.mode === "act" ? (
+                <Text color="greenBright"> | Build [ON]</Text>
+              ) : (
+                <Text dimColor> | Build [OFF]</Text>
+              )}
+              <Text dimColor> (Tab)</Text>
+            </Text>
+            <Text wrap="truncate">
+              {props.autoApprove === "all" ? (
+                <Text color="yellow">
+                  Auto-approve ALL <Text dimColor>(Shift+Tab)</Text>
                 </Text>
-              </>
-            )}
-            {props.status.isExhausted && props.status.resetTime != null && (
-              <>
-                <Text>{DIM} | {RESET}</Text><Text color="red">[Quota Exceeded — Resets in {props.status.resetTime}]</Text>
-              </>
-            )}
-          </Text>
-          <Text>
-            <Text>{WHITE}{props.workspace}{RESET}</Text>
-          </Text>
-          <Text>{WHITE}Ctrl+Shift+Backspace: Quit {RESET}{DIM}|{RESET}{WHITE} Esc: Stop/Close{RESET}</Text>
-        </Box>
-        <Box flexDirection="column" alignItems="flex-end" flexShrink={0} paddingLeft={2}>
-          <Text wrap="truncate">
-            {props.mode === "plan" ? (
-              <Text color="yellowBright">Plan [ON]</Text>
-            ) : (
-              <Text dimColor>Plan [OFF]</Text>
-            )}
-            {props.mode === "act" ? (
-              <Text color="greenBright"> | Build [ON]</Text>
-            ) : (
-              <Text dimColor> | Build [OFF]</Text>
-            )}
-            <Text dimColor> (Tab)</Text>
-          </Text>
-          <Text wrap="truncate">
-            {props.autoApprove === "all" ? (
-              <Text>
-                <Text color="yellow">Auto-approve ALL</Text>
-                <Text dimColor> (Shift+Tab)</Text>
-              </Text>
-            ) : props.autoApprove === "writes" ? (
-              <Text>
-                <Text color="yellow">Auto-approve writes</Text>
-                <Text dimColor> (Shift+Tab)</Text>
-              </Text>
-            ) : (
-              <Text dimColor>Auto-approve off (Shift+Tab)</Text>
-            )}
-          </Text>
+              ) : props.autoApprove === "writes" ? (
+                <Text color="yellow">
+                  Auto-approve writes <Text dimColor>(Shift+Tab)</Text>
+                </Text>
+              ) : (
+                <Text dimColor>Auto-approve off (Shift+Tab)</Text>
+              )}
+            </Text>
+          </Box>
         </Box>
       </Box>
     </Box>

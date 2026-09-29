@@ -7,6 +7,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAdapter, type ToolifyConfig } from "../src/cli/run.js";
+import { readConfigSync, resolveBaseUrlSync } from "../src/utils/config.js";
 import { AgentLoop, type ApprovalHandler } from "../src/agent/loop.js";
 import { PolicyEngine, TOOL_SCHEMAS } from "../src/tools/registry.js";
 import { TaskDigest } from "../src/agent/digest.js";
@@ -95,7 +96,19 @@ describe("token usage flows end-to-end (live HTTP -> agent loop -> meter)", () =
   it("builds the adapter from ~/.toolify/config.json and returns the provider's real usage", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "toolify-usage-"));
     const cfg: ToolifyConfig = { provider: "openai", model: "gpt-4o" };
-    const adapter = createAdapter(cfg, workspace);
+        const adapter = createAdapter(cfg, workspace);
+
+    const dbg = {
+      fixtureHome,
+      homedir: os.homedir(),
+      userprofile: process.env.USERPROFILE,
+      envOpenaiBaseUrl: process.env.OPENAI_BASE_URL,
+      cfgJson: readConfigSync(),
+      url: resolveBaseUrlSync("openai", workspace),
+      adapterBaseUrl: (adapter as any).baseUrl,
+      expectedBaseUrl: baseUrl,
+    };
+    fs.writeFileSync("USAGE_DEBUG.txt", JSON.stringify(dbg, null, 2), "utf8");
 
     expect(adapter.baseUrl).toBe(baseUrl); // resolved from the fixture store
 

@@ -52,9 +52,36 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       required: ["pattern"],
     },
   },
+    {
+    name: "glob",
+    description: "Find files by filename pattern (supports *, **, ?).",
+    inputSchema: {
+      type: "object",
+      properties: { pattern: { type: "string" } },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "list_files",
+    description: "List files in the workspace matching a glob pattern (alias of glob).",
+    inputSchema: {
+      type: "object",
+      properties: { pattern: { type: "string" } },
+      required: ["pattern"],
+    },
+  },
   {
     name: "grep",
     description: "Search file contents with a regex; returns path:line: text hits.",
+    inputSchema: {
+      type: "object",
+      properties: { pattern: { type: "string" }, glob: { type: "string" } },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "search_files",
+    description: "Search file contents for a pattern (alias of grep).",
     inputSchema: {
       type: "object",
       properties: { pattern: { type: "string" }, glob: { type: "string" } },
@@ -77,6 +104,8 @@ export const TIER_BY_TOOL: Record<string, RiskTier> = {
   read_file: "read",
   glob: "read",
   grep: "read",
+  list_files: "read",
+  search_files: "read",
   write_file: "write",
   edit_file: "write",
   terminal: "dangerous",
@@ -164,6 +193,10 @@ export class PolicyEngine {
       case "glob":
         return globTool(guard, input as never);
       case "grep":
+        return grepTool(guard, input as never);
+      case "list_files":
+        return globTool(guard, input as never);
+      case "search_files":
         return grepTool(guard, input as never);
       case "terminal":
         return terminalTool(guard, input as never);

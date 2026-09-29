@@ -1,5 +1,5 @@
 {
   "provider": "openrouter",
-  "model": "z-ai/glm-5.3-flashx",
+  "model": "~deepseek/deepseek-flash-latest",
   "baseUrl": "https://api.openai.com/v1"
 }

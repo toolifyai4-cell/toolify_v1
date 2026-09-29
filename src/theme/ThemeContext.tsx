@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { readConfigSync, writeConfig } from "../utils/config.js";
 import { THEMES, getThemeById } from "./themes.js";
+import { getProviderTokens } from "./provider-colors.js";
 import type { Theme, ThemeTokens } from "../agent/types.js";
+import { THEME_IDS } from "../agent/types.js";
 
 /**
  * Global reactive theme context.
@@ -52,12 +54,31 @@ export interface ThemeProviderProps {
   readonly children: React.ReactNode;
   /** Workspace path — accepted for API symmetry; theme persistence is global. */
   readonly workspace?: string;
+  /** Active provider id — when no static theme is persisted, the UI adopts
+   * this provider's color palette via `getProviderTokens(provider)`. */
+  readonly provider?: string;
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps): React.ReactElement {
+/** Build a Theme backed by a provider's resolved color tokens. */
+function providerTheme(provider: string): Theme {
+  return {
+    id: "provider",
+    name: `Provider Theme (${provider})`,
+    isDark: true,
+    tokens: getProviderTokens(provider),
+  };
+}
+
+export function ThemeProvider({ children, provider }: ThemeProviderProps): React.ReactElement {
   const [theme, setThemeState] = React.useState<Theme>(() => {
     const savedId = readPersistedThemeId();
-    return savedId ? getThemeById(savedId) : THEMES[0]!;
+    if (savedId && THEME_IDS.includes(savedId)) {
+      return getThemeById(savedId);
+    }
+    // Persisted as "provider" (or no recognized static theme): adopt the active
+    // provider's palette, falling back to the default theme when none is given.
+    if (provider) return providerTheme(provider);
+    return THEMES[0]!;
   });
 
   const setTheme = useCallback(async (themeId: string) => {

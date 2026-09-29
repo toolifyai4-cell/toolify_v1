@@ -8,6 +8,8 @@ export type ToolName =
   | "edit_file"
   | "glob"
   | "grep"
+  | "list_files"
+  | "search_files"
   | "terminal"
   | "task_digest";
 

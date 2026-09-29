@@ -17,12 +17,12 @@ import { getQuota } from "../models/quota-tracker.js";
 import { ChatUI, type ChatMessage } from "../components/ChatUI.js";
 import { buildSessionSummary } from "./session-summary.js";
 import { ThemeProvider } from "../theme/ThemeContext.js";
-import { clearScreen, patchTtyForFullScreen } from "./screen.js";
 import { MenuScreen } from "../components/MenuScreen.js";
 import { loadAuthSession } from "../auth/index.js";
 import type { AuthUser } from "../auth/types.js";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { clearScreen, patchTtyForFullScreen } from "./screen.js";
 
 type AutoApproveMode = "off" | "writes" | "all";
 const AUTO_ORDER: AutoApproveMode[] = ["off", "writes", "all"];
@@ -460,15 +460,23 @@ export function ChatHost({
 
 /** Entry point used by the CLI: renders the full-screen interface. */
 export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<void> {
-  // Ink only erases its frame in interactive mode, and npx/tsx on Windows
-  // often reports isTTY=false even inside a real terminal, so force it on.
+  // Force TTY mode so Ink enables full-screen rendering (required for
+  // height={height} on the root <Box> to pin the input/status bar to the
+  // bottom edge). patchTtyForFullScreen() only sets isTTY=true -- it emits
+  // no ANSI codes and does NOT touch the scrollback buffer.
+  //
+  // clearScreen() writes ESC[2J ESC[H: this clears the *visible* viewport
+  // and parks the cursor top-left, but deliberately does NOT emit ESC[3J,
+  // so all prior entry-flow output (splash, auth, wizard) slides into the
+  // terminal's native scrollback rather than being destroyed. This gives us
+  // a clean canvas for the full-screen chat layout while preserving history.
   patchTtyForFullScreen();
-  // Wipe the entry flow's final frame so the chat starts on a clean screen.
   clearScreen();
 
   const { unmount } = render(
-    React.createElement(ThemeProvider, {
+        React.createElement(ThemeProvider, {
       workspace,
+      provider: cfg.provider,
       children: React.createElement(ChatHost, { workspace, cfg }),
     }),
     {
@@ -487,10 +495,38 @@ export async function startChat(workspace: string, cfg: ToolifyConfig): Promise<
       },
     },
   );
-  process.on("SIGINT", () => {
+    process.on("SIGINT", () => {
     unmount();
     process.exit(0);
   });
 }
 
+/**
+ * Activity kinds surfaced by the live status bar in the chat TUI
+ * (Claude-style rotating thinking synonyms).
+ */
+export type AgentActivity =
+  | { kind: "idle" }
+  | { kind: "thinking" }
+  | { kind: "composing" }
+  | { kind: "tool"; name: string };
 
+const THINKING_FRAMES = ["Calibrating…", "Thinking…", "Processing…", "Reasoning…"];
+
+/**
+ * Map a live activity + tick counter to a short, human-readable status label.
+ * `idle` yields no label (nothing to report). `thinking` cycles through a set
+ * of synonyms so the status bar never looks frozen.
+ */
+export function activityText(activity: AgentActivity, tick: number): string | undefined {
+  switch (activity.kind) {
+    case "idle":
+      return undefined;
+    case "thinking":
+      return THINKING_FRAMES[(((tick ?? 0) % THINKING_FRAMES.length) + THINKING_FRAMES.length) % THINKING_FRAMES.length];
+    case "composing":
+      return "Composing reply…";
+    case "tool":
+      return `Running ${activity.name}…`;
+  }
+}

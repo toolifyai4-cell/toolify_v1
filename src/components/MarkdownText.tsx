@@ -1,5 +1,5 @@
 import React from "react";
-import { Text } from "ink";
+import { Box, Text } from "ink";
 
 export interface MarkdownTextProps {
   /** Raw markdown string from the agent or user. */
@@ -54,8 +54,8 @@ function parseTableRow(line: string): string[] {
     .filter((_, i, arr) => i > 0 && i < arr.length - 1);
 }
 
-/** Render a markdown table as an ANSI-borded grid. */
-function renderTable(table: { headers: string[]; rows: string[][] }): React.ReactElement {
+/** Render a markdown table as an array of ANSI-borded grid lines. */
+function renderTable(table: { headers: string[]; rows: string[][] }): React.ReactNode[] {
   const allRows = [table.headers, ...table.rows];
   const colWidths = table.headers.map((_, colIdx) =>
     Math.max(...allRows.map((row) => (row[colIdx] ?? "").length), table.headers[colIdx]!.length),
@@ -84,16 +84,13 @@ function renderTable(table: { headers: string[]; rows: string[][] }): React.Reac
     );
   };
 
-  const lines: React.ReactNode[] = [];
-  lines.push(<Text key="top">{topBorder}</Text>);
-  lines.push(renderRow(table.headers, true));
-  lines.push(<Text key="mid">{midBorder}</Text>);
-  table.rows.forEach((row, idx) => {
-    lines.push(renderRow(row, false));
-  });
-  lines.push(<Text key="bot">{botBorder}</Text>);
-
-  return <>{lines}</>;
+  return [
+    <Text key="top">{topBorder}</Text>,
+    renderRow(table.headers, true),
+    <Text key="mid">{midBorder}</Text>,
+    ...table.rows.map((row) => renderRow(row, false)),
+    <Text key="bot">{botBorder}</Text>,
+  ];
 }
 
 /** Parse inline markdown and return an array of styled React nodes. */
@@ -236,21 +233,27 @@ export function MarkdownText({ content }: MarkdownTextProps): React.ReactElement
   const lines = content.split("\n");
   const blocks = groupLines(lines);
 
-  return (
-    <>{blocks.map((block, idx) => (
-      <Text key={idx} dimColor={block.type === "list"}>
-        {block.type === "header" ? (
-          <Text bold color="yellow">
-            {renderInline(block.text)}
-          </Text>
-        ) : block.type === "list" ? (
-          renderInline(`${block.bullet} ${block.text}`)
-        ) : block.type === "table" ? (
-          block.table ? renderTable(block.table) : null
+    return (
+    <Box flexDirection="column">
+      {blocks.map((block, idx) => (
+        block.type === "table" && block.table ? (
+          <Box key={idx} flexDirection="column">
+            {renderTable(block.table)}
+          </Box>
         ) : (
-          renderInline(block.text)
-        )}
-      </Text>
-    ))}</>
+          <Text key={idx} dimColor={block.type === "list"}>
+            {block.type === "header" ? (
+              <Text bold color="yellow">
+                {renderInline(block.text)}
+              </Text>
+            ) : block.type === "list" ? (
+              renderInline(`${block.bullet} ${block.text}`)
+            ) : (
+              renderInline(block.text)
+            )}
+          </Text>
+        )
+      ))}
+    </Box>
   );
 }

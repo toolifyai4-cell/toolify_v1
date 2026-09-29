@@ -37,6 +37,14 @@ import { AgentTimeoutError, withTimeout } from "./timeouts.js";
 import { consumeProviderStream } from "./stream-consumer.js";
 export { AgentTimeoutError, withTimeout } from "./timeouts.js";
 
+/**
+ * Exact footer appended to every Plan-mode blueprint. The runtime guarantees
+ * this line terminates a plan (even when the model omits it); `plan-mode.test.ts`
+ * asserts the literal string.
+ */
+export const PLAN_MODE_FOOTER: string =
+  "👉 Press 'Tab' to switch to Act Mode when you are ready to execute this plan.";
+
 export interface ApprovalHandler {
   request(
     call: ToolCall,
@@ -347,8 +355,8 @@ export class AgentLoop {
     // directly; the loop only tracks the aborted flag for its iteration checks.
   }
 
-  private systemPrompt(): string {
-    return [
+    private systemPrompt(): string {
+    const lines = [
       "You are TOOLIFY, an AI coding agent running inside an Ink TUI.",
       "",
       "## Conversation First (human-like behavior)",
@@ -371,7 +379,27 @@ export class AgentLoop {
       "",
       "## Task Digest (pinned)",
       this.opts.digest.render(),
-    ].join("\n");
+    ];
+
+    if (this.opts.mode === "plan") {
+      // Mandate the read-only blueprint structure so the model emits the
+      // required sections and concludes with the exact footer line.
+      lines.push(
+        "",
+        "### Plan Mode (read-only blueprinting)",
+        "When in Plan Mode, deliver a step-by-step architecture plan using ONLY read-only tools: read_file, list_files, search_files, glob, grep. Do NOT modify files or execute terminal commands.",
+        "",
+        "Mandatory blueprint structure — include each heading exactly:",
+        "**Target files/folders**:",
+        "**Code modification outline**:",
+        "**Terminal commands**:",
+        "",
+        "Conclude the blueprint with this exact footer line:",
+        PLAN_MODE_FOOTER,
+      );
+    }
+
+    return lines.join("\n");
   }
 
   private async emit(e: AgentEvent): Promise<void> {
@@ -427,10 +455,16 @@ export class AgentLoop {
           const { usage, costUsd } = o.meter.add(res.usage);
           await this.emit({ type: "usage_update", usage, costUsd, ts: Date.now() });
 
-          if (res.text) {
+                    if (res.text) {
+            let assistantText = res.text;
+            // In Plan Mode, guarantee the concluding blueprint ends with the
+            // footer line (even if the model omitted it), without duplicating it.
+            if (o.mode === "plan" && res.toolCalls.length === 0) {
+              assistantText = ensurePlanFooter(res.text);
+            }
             await this.emit({
               type: "assistant_message",
-              content: res.text,
+              content: assistantText,
               usage: res.usage,
               ts: Date.now(),
             });
@@ -485,25 +519,32 @@ export class AgentLoop {
             isError?: boolean;
           }> = [];
           for (const call of res.toolCalls) {
-            // Mode filtering (Cline parity): Plan mode blocks write/dangerous tools.
-            const allowedByMode =
-              o.mode === "act" ||
-              (o.mode === "plan" && ["read_file", "glob", "grep"].includes(call.name));
-            if (!allowedByMode) {
-              const blocked = {
-                callId: call.id,
-                content: `[BLOCKED in Plan mode: ${call.name}. Switch to Act mode (Tab) to ${call.name}.]`,
-                isError: true,
-              } as const;
-              results.push(blocked);
+                        // Plan Mode (Cline parity): read-only tools (read_file, glob, grep,
+            // list_files, search_files) still execute, but write/dangerous tools
+            // are intercepted GRACEFULLY — never a hard "[BLOCKED ...] error".
+            const PLAN_READ_ONLY = ["read_file", "glob", "grep", "list_files", "search_files"];
+            if (o.mode === "plan" && !PLAN_READ_ONLY.includes(call.name)) {
+              const inp = (call.input ?? {}) as Record<string, unknown>;
+              const target =
+                typeof inp.path === "string"
+                  ? inp.path
+                  : typeof inp.command === "string"
+                    ? inp.command
+                    : call.name;
+              const content =
+                `Plan Mode is read-only — this action was intercepted, not executed. NOT an error.\n` +
+                `\n### Plan Mode (read-only blueprinting)` +
+                `\n**Target files/folders**: ${target}` +
+                `\n\nThis was a ${call.name} call. Switch to Act Mode (Tab) to run it for real.`;
+              results.push({ callId: call.id, content, isError: false });
               await this.emit({
                 type: "tool_finished",
                 callId: call.id,
-                content: blocked.content,
-                isError: true,
+                content,
+                isError: false,
                 ts: Date.now(),
               });
-              o.onStream?.onToolResult?.(call.id, blocked.content, true);
+              o.onStream?.onToolResult?.(call.id, content, false);
               continue;
             }
             // Fire streaming hook: the TUI highlights this tool in the conversation.
@@ -701,6 +742,12 @@ export class AgentLoop {
 
     return { callId: call.id, content, isError };
   }
+}
+
+/** Ensure a Plan-mode blueprint ends with PLAN_MODE_FOOTER exactly once. */
+function ensurePlanFooter(text: string): string {
+  if (text.includes(PLAN_MODE_FOOTER)) return text;
+  return text + (text.endsWith("\n") ? "" : "\n") + "\n" + PLAN_MODE_FOOTER;
 }
 
 function touchedPaths(call: ToolCall): string[] {

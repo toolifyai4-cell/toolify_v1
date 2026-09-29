@@ -96,6 +96,13 @@ export function summarizeEdit(call: ToolCall): EditSummary | null {
   return null;
 }
 
+export function cardDiff(
+  oldLines: readonly string[],
+  newLines: readonly string[],
+): LineDiff | null {
+  if (oldLines.length === 0 && newLines.length === 0) return null;
+  return diffLineArrays(oldLines, newLines);
+}
 const TOKEN_RE =
   /(\/\/.*$)|((?<=^|\s)#[^\s].*$)|("[^"]*"|'[^']*'|`[^`]*`)|\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|import|export|from|default|class|extends|new|async|await|try|catch|finally|throw|typeof|instanceof|interface|type|enum|readonly|static|null|undefined|true|false|this|void|as|in|of)\b|(0x[0-9a-fA-F_]+|\b\d[\d_]*(?:\.\d+)?\b)/g;
 

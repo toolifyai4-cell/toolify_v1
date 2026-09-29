@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   COMMAND_TOOLS,
   EDITOR_TOOLS,
+  cardDiff,
   cardTitle,
   clipLine,
   diffLineArrays,
@@ -71,6 +72,17 @@ describe("ToolCards diff + summary", () => {
     expect(diff.added).toEqual(["X", "Y"]);
   });
 
+  it("cardDiff returns null for two empty arrays", () => {
+    expect(cardDiff([], [])).toBeNull();
+  });
+
+  it("cardDiff delegates to diffLineArrays for non-empty input", () => {
+    const diff = cardDiff(["a", "b", "c"], ["a", "X", "c"]);
+    expect(diff).not.toBeNull();
+    expect(diff!.removed).toEqual(["b"]);
+    expect(diff!.added).toEqual(["X"]);
+  });
+
   it("summarizes a brand-new file as L+N lines (new)", () => {
     const content = Array.from({ length: 44 }, (_, i) => `export const v${i + 1} = 1;`).join("\n");
     const s = summarizeEdit(tc("write_file", { path: "src/gen.ts", content }));
@@ -86,6 +98,11 @@ describe("ToolCards diff + summary", () => {
   });
 
   it("returns null when the editor inputs are missing", () => {
+    expect(summarizeEdit(tc("write_file", { path: "x.ts" }))).toBeNull();
+    expect(summarizeEdit(tc("edit_file", { path: "x.ts" }))).toBeNull();
+    expect(summarizeEdit(tc("read_file", { path: "x.ts" }))).toBeNull();
+  });
+});
 
 describe("ToolCards titles", () => {
   it("maps command tools to `* run_commands(<cmd>)`", () => {
@@ -148,11 +165,5 @@ describe("verification report format", () => {
 
   it("reports an empty checklist cleanly", () => {
     expect(buildVerificationReport([])).toBe("### Verification\n(no checks ran)");
-  });
-});
-
-    expect(summarizeEdit(tc("write_file", { path: "x.ts" }))).toBeNull();
-    expect(summarizeEdit(tc("edit_file", { path: "x.ts" }))).toBeNull();
-    expect(summarizeEdit(tc("read_file", { path: "x.ts" }))).toBeNull();
   });
 });

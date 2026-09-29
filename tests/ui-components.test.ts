@@ -418,12 +418,19 @@ describe("MenuScreen renders", () => {
 });
 
 /**
- * Layout regression: the input bar and status bar must be pinned to the BOTTOM.
+ * Layout regression: completed messages are rendered once via Ink's `<Static>`
+ * (which writes to the terminal's native scrollback buffer) and the active
+ * (last) message lives in a live region that Ink re-renders for streaming.
  *
- * Ink only ever calls `rootNode.yogaNode.setWidth(...)` when computing layout
- * (ink.js `calculateLayout`), never `setHeight`. A `height="100%"` root
- * therefore resolves to nothing and the whole UI collapses to the top of the
- * terminal. ChatUI reads the real row count via `useWindowSize()` instead.
+ * The root `<Box>` carries a fixed height (sourced from
+ * useStdout().stdout.rows — NOT useWindowSize) that matches the terminal
+ * viewport.  The inner message-area Box uses flexGrow={1} overflow="hidden"
+ * so the input bar and status bar are pinned to the very bottom row of the
+ * terminal, matching the Cline layout standard.
+ *
+ * Scrollback is preserved because clearScreen() + patchTtyForFullScreen()
+ * have been removed from chat.tsx — setting a height on the Box does NOT wipe
+ * the terminal; only those TTY-patching calls did.
  */
 describe("ChatUI fills the terminal height", () => {
   const ROWS = 24;
@@ -466,10 +473,139 @@ describe("ChatUI fills the terminal height", () => {
     const statusIndex = lines.findIndex((l) => l.includes("Auto-approve off"));
 
     expect(promptIndex).toBeGreaterThanOrEqual(0);
+    // Welcome prompt sits near the top, not floating in the center.
+    expect(promptIndex).toBeLessThan(5);
     expect(inputIndex).toBeGreaterThan(promptIndex); // input sits BELOW the transcript
     expect(statusIndex).toBeGreaterThan(inputIndex); // status sits below the input
-    // With a collapsed (percentage) height this would be ~10, not >= ROWS - 6.
-    expect(inputIndex).toBeGreaterThanOrEqual(ROWS - 6);
+            // Input bar and status bar are pinned to the bottom of the terminal
+    // (height={height} on root Box with fixed height on the message area,
+    // BOTTOM_PANEL_HEIGHT=7 reserved for thinking + input + status).
+        expect(inputIndex).toBeGreaterThanOrEqual(ROWS - 6);
     expect(lines.length).toBeGreaterThanOrEqual(ROWS - 1);
+  });
+
+  it("keeps the bottom panel fixed when thinking is active with multi-turn messages", async () => {
+    // Multi-turn conversation with an active running state — the thinking
+    // spinner renders, the user prompt + response must both stay visible,
+    // and the input/status bar must remain pinned at the bottom.
+    const messages: ChatMessage[] = [
+      { role: "user", content: "Hello, how are you?" },
+      { role: "assistant", content: "I'm doing well, thank you! How can I help you today?" },
+      { role: "user", content: "Can you write a function?" },
+    ];
+    const { stream, writes } = fakeStdout(ROWS);
+    const instance = render(React.createElement(ChatUI, chatProps({
+      isRunning: true,
+      messages,
+    })), {
+      stdout: stream,
+      stdin: fakeStdin(),
+      exitOnCtrlC: false,
+      interactive: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    instance.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const frame = writes.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    const lines = frame.split("\n").map((line) => line.trimEnd());
+
+    // User prompt and assistant response must both be visible.
+    expect(frame).toContain("Hello, how are you?");
+    expect(frame).toContain("I'm doing well");
+    expect(frame).toContain("Can you write a function?");
+
+    // Thinking indicator must appear (at least once — deduplication of
+    // multiple thinking messages is covered by the renderToString test).
+    expect(frame).toContain("Thinking...");
+
+    // Input bar must be pinned near the bottom.
+    const inputIndex = lines.findIndex((l) => l.includes("Type a message"));
+    const statusIndex = lines.findIndex((l) => l.includes("Auto-approve off"));
+    expect(inputIndex).toBeGreaterThanOrEqual(ROWS - 6);
+    expect(statusIndex).toBeGreaterThan(inputIndex);
+
+    // Status bar must be in the last 3 rows.
+    expect(statusIndex).toBeGreaterThanOrEqual(ROWS - 3);
+    expect(lines.length).toBeGreaterThanOrEqual(ROWS - 1);
+  });
+
+  it("renders all completed messages via <Static> plus the active last message", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+      { role: "assistant", content: "second answer" },
+    ];
+    const out = renderChat({ messages });
+    // All messages render — completed ones via <Static>, the last via the
+    // live active region.
+    expect(out).toContain("first question");
+    expect(out).toContain("first answer");
+    expect(out).toContain("second question");
+    expect(out).toContain("second answer");
+  });
+
+  it("renders the sole message in the active region when there is only one message", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "only question" },
+    ];
+    const out = renderChat({ messages });
+    expect(out).toContain("only question");
+    // A single message is the *active* message (not a completed one), so the
+    // "What can I do for you?" landing prompt should NOT appear.
+    expect(out).not.toContain("What can I do for you?");
+  });
+
+  it("renders the NEXIPI badge on assistant message bubbles", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello there" },
+    ];
+    const out = renderChat({ messages });
+    expect(out).toContain("NEXIPI");
+    // User bubbles get the "YOU" badge, not NEXIPI.
+    expect(out).toContain("YOU");
+  });
+
+  it("deduplicates the thinking indicator — one spinner regardless of message count", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "first" },
+      { role: "assistant", content: "...", thinking: true },
+      { role: "assistant", content: "...", thinking: true },
+      { role: "assistant", content: "final", thinking: true },
+    ];
+    const out = renderChat({ isRunning: true, messages });
+    const thinkingCount = (out.match(/Thinking\.\.\./g) || []).length;
+    expect(thinkingCount).toBe(1);
+  });
+
+  it("does NOT render the thinking spinner when settings or models overlay is active", () => {
+    // Even with isRunning=true, the isChatView guard suppresses the spinner.
+    const withSettings = renderChat({
+      isRunning: true,
+      settingsOpen: true,
+      settingsInitial: {
+        provider: "openai" as const,
+        model: "gpt-4o",
+        mode: "act",
+        theme: "default",
+        autoApprove: "off",
+        autoUpdate: false,
+        mcp: { servers: [] },
+        plugins: {},
+      },
+      onSettingsSave: () => {},
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(withSettings).not.toContain("Thinking...");
+
+    const withModels = renderChat({
+      isRunning: true,
+      modelsOpen: true,
+      onModelsCommit: () => {},
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(withModels).not.toContain("Thinking...");
   });
 });

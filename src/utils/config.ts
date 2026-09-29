@@ -111,6 +111,7 @@ export async function readConfig(): Promise<ToolifyConfig> {
     return {
       apiKeys: parsed.apiKeys ?? {},
       baseUrls: parsed.baseUrls ?? {},
+      theme: parsed.theme,
     };
   } catch {
     return { apiKeys: {}, baseUrls: {} };
@@ -207,11 +208,11 @@ export async function resolveBaseUrl(
 function ensureConfigDirSync(): void {
   const dir = configDir();
   if (!existsSync(dir)) {
-    try { require("node:fs").mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { /* ignore */ }
+  try { require("node:fs").mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { /* ignore */ }
   }
   const path = configPath();
   if (!existsSync(path)) {
-    try {
+  try {
       require("node:fs").writeFileSync(
         path,
         JSON.stringify({ apiKeys: {}, baseUrls: {} }, null, 2),
@@ -228,7 +229,11 @@ export function readConfigSync(): ToolifyConfig {
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw) as Partial<ToolifyConfig>;
-    return { apiKeys: parsed.apiKeys ?? {}, baseUrls: parsed.baseUrls ?? {} };
+    return {
+      apiKeys: parsed.apiKeys ?? {},
+      baseUrls: parsed.baseUrls ?? {},
+      theme: parsed.theme,
+    };
   } catch {
     return { apiKeys: {}, baseUrls: {} };
   }

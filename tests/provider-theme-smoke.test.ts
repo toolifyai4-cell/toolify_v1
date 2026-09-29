@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import React from "react";
 import { renderToString } from "ink";
 import { Text } from "ink";
@@ -7,14 +10,40 @@ import { ThemeProvider, useTheme } from "../src/theme/ThemeContext.js";
 import { getProviderTokens } from "../src/theme/provider-colors.js";
 import { ansi } from "../src/theme/ansi.js";
 
-const store = vi.hoisted(() => ({
-  theme: "provider" as string,
-}));
+const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_USERPROFILE = process.env.USERPROFILE;
+let fixtureHome: string | null = null;
+let configPath: string | null = null;
 
-vi.mock("../src/utils/config.js", () => ({
-  readConfigSync: () => ({ apiKeys: {}, baseUrls: {}, theme: store.theme }),
-  writeConfig: async () => {},
-}));
+function setPersistedTheme(theme: string | undefined): void {
+  if (!fixtureHome) {
+    fixtureHome = fs.mkdtempSync(path.join(os.tmpdir(), "toolify-theme-"));
+    process.env.HOME = fixtureHome;
+    process.env.USERPROFILE = fixtureHome;
+    const dir = path.join(fixtureHome, ".toolify");
+    fs.mkdirSync(dir, { recursive: true });
+    configPath = path.join(dir, "config.json");
+  }
+  const cfg: Record<string, unknown> = { apiKeys: {}, baseUrls: {} };
+  if (theme) cfg.theme = theme;
+  fs.writeFileSync(configPath!, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+}
+
+afterAll(() => {
+  if (fixtureHome) {
+    try {
+      fs.rmSync(fixtureHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    if (ORIGINAL_HOME === undefined) delete process.env.HOME;
+    else process.env.HOME = ORIGINAL_HOME;
+    if (ORIGINAL_USERPROFILE === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = ORIGINAL_USERPROFILE;
+    fixtureHome = null;
+    configPath = null;
+  }
+});
 
 function Probe(): React.ReactElement {
   const { tokens } = useTheme();
@@ -23,6 +52,7 @@ function Probe(): React.ReactElement {
 
 describe("Provider Theme — live recolour on model switch", () => {
   it("recolours to blue when the active provider is gemini", () => {
+    setPersistedTheme("provider");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -34,6 +64,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("recolours to orange when the active provider is anthropic", () => {
+    setPersistedTheme("provider");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -45,6 +76,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("recolours to green when the active provider is openai", () => {
+    setPersistedTheme("provider");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -56,6 +88,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("recolours to magenta when the active provider is openrouter", () => {
+    setPersistedTheme("provider");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -67,6 +100,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("falls back to cyan for an unknown provider", () => {
+    setPersistedTheme("provider");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -78,7 +112,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("does NOT recolour when a static theme is active", () => {
-    store.theme = "matrix";
+    setPersistedTheme("matrix");
     const out = renderToString(
       React.createElement(
         ThemeProvider,
@@ -91,9 +125,7 @@ describe("Provider Theme — live recolour on model switch", () => {
   });
 
   it("recolours live when the provider prop changes", () => {
-    // Render once with gemini, then re-render with anthropic — the tokens
-    // must follow the prop change (this is what makes /models switching live).
-    store.theme = "provider";
+    setPersistedTheme("provider");
     const gemini = renderToString(
       React.createElement(
         ThemeProvider,

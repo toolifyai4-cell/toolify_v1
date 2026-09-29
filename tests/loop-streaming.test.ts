@@ -6,6 +6,7 @@
  * afterwards (which would duplicate output in the TUI).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import "./vi-shim";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

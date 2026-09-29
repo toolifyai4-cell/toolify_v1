@@ -25,7 +25,14 @@ export const ANSI_BY_COLOR: Record<string, string> = {
   whiteBright: "\x1b[97m",
 };
 
-/** Resolve a theme token color name to its ANSI escape ("" when unknown). */
+/**
+ * Resolve a theme token color name to its ANSI escape.
+ *
+ * Raw escape sequences (e.g. 256-color codes emitted for some provider hues)
+ * are passed through untouched so provider-theme tokens bridge correctly without
+ * being double-encoded. Unknown names resolve to an empty string (no decoration).
+ */
 export function ansi(color: string): string {
+  if (color.startsWith("\x1b[")) return color;
   return ANSI_BY_COLOR[color] ?? "";
 }

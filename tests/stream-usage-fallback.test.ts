@@ -8,6 +8,7 @@
  * 400, degrading to "no usage data" instead of failing the whole turn.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import "./vi-shim";
 import { OpenAICompatibleAdapter } from "../src/models/openai-compatible.js";
 import { consumeProviderStream } from "../src/agent/stream-consumer.js";
 import { createModelProvider } from "../src/providers/provider.js";

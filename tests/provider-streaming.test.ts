@@ -5,6 +5,7 @@
  * wire-format translation without network access or API keys.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import "./vi-shim";
 import { OpenAICompatibleAdapter } from "../src/models/openai-compatible.js";
 import { AnthropicAdapter } from "../src/models/anthropic.js";
 import { MockModelAdapter } from "../src/models/mock.js";

@@ -9,6 +9,7 @@
  * so this can never regress silently again.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import "./vi-shim";
 import { OpenAICompatibleAdapter } from "../src/models/openai-compatible.js";
 import type { ChatRequest, ModelMessage } from "../src/agent/types.js";
 

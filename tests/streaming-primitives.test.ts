@@ -112,11 +112,17 @@ describe("iterSse", () => {
       },
     });
 
-    const out: string[] = [];
+        const out: string[] = [];
     await (async () => {
       for await (const frame of iterSse(hanging, controller.signal)) {
         out.push(frame.data);
         if (out.length === 1) controller.abort();
+      }
+    })();
+    expect(out).toEqual(["a"]);
+    expect(cancelled).toBe(true);
+  });
+});
 
 describe("ToolCallAccumulator", () => {
   it("reassembles arguments split into many fragments", () => {
@@ -183,13 +189,5 @@ describe("parseToolArguments", () => {
   it("flags malformed input instead of throwing", () => {
     const out = parseToolArguments("{oops") as Record<string, unknown>;
     expect(out._parseError).toBe(true);
-  });
-});
-
-      }
-    })();
-
-    expect(out).toEqual(["a"]);
-    expect(cancelled).toBe(true);
   });
 });

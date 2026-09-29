@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import React from "react";
 import { renderToString, Text } from "ink";
 
@@ -15,24 +18,46 @@ import { ModelsTab } from "../src/components/ModelsTab.js";
 import type { ModelDescriptor } from "../src/models/model-registry.js";
 
 /**
- * Persisted-config stub. `vi.hoisted` is required because `vi.mock` factories
- * are lifted above the imports, so they cannot close over plain top-level lets.
+ * Hermetic fixture: redirect `os.homedir()` (via HOME/USERPROFILE) to a temp
+ * dir and write a real `.toolify/config.json` so `readConfigSync` returns the
+ * desired persisted theme. We deliberately avoid `vi.mock("../src/utils/config")`
+ * because Bun's test runner shares the module registry across files — a module
+ * mock leaks into every other test file and breaks credential resolution.
  */
-const store = vi.hoisted(() => ({
-  theme: "dracula" as string | undefined,
-  writes: [] as Array<Record<string, unknown>>,
-}));
+const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_USERPROFILE = process.env.USERPROFILE;
+let fixtureHome: string | null = null;
+let configPath: string | null = null;
 
-vi.mock("../src/utils/config.js", () => ({
-  readConfigSync: () => ({ apiKeys: {}, baseUrls: {}, theme: store.theme }),
-  writeConfig: async (cfg: Record<string, unknown>) => {
-    store.writes.push(cfg);
-  },
-  saveApiKey: async () => {},
-  saveBaseUrl: async () => {},
-  resolveApiKeySync: () => undefined,
-  resolveBaseUrlSync: () => undefined,
-}));
+function setPersistedTheme(theme: string | undefined): void {
+  if (!fixtureHome) {
+    fixtureHome = fs.mkdtempSync(path.join(os.tmpdir(), "toolify-theme-"));
+    process.env.HOME = fixtureHome;
+    process.env.USERPROFILE = fixtureHome;
+    const dir = path.join(fixtureHome, ".toolify");
+    fs.mkdirSync(dir, { recursive: true });
+    configPath = path.join(dir, "config.json");
+  }
+  const cfg: Record<string, unknown> = { apiKeys: {}, baseUrls: {} };
+  if (theme) cfg.theme = theme;
+  fs.writeFileSync(configPath!, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+}
+
+afterAll(() => {
+  if (fixtureHome) {
+    try {
+      fs.rmSync(fixtureHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    if (ORIGINAL_HOME === undefined) delete process.env.HOME;
+    else process.env.HOME = ORIGINAL_HOME;
+    if (ORIGINAL_USERPROFILE === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = ORIGINAL_USERPROFILE;
+    fixtureHome = null;
+    configPath = null;
+  }
+});
 
 /** Renders the active theme id + two tokens so context propagation is visible. */
 function TokenProbe(): React.ReactElement {
@@ -115,7 +140,7 @@ describe("ThemeModal", () => {
 
 describe("ThemeProvider", () => {
   it("reads the persisted theme id and exposes its tokens to consumers", () => {
-    store.theme = "dracula";
+        setPersistedTheme("dracula");
     const out = renderToString(
       React.createElement(ThemeProvider, {
         children: React.createElement(TokenProbe),
@@ -126,7 +151,7 @@ describe("ThemeProvider", () => {
   });
 
   it("reacts to a different persisted theme (matrix)", () => {
-    store.theme = "matrix";
+        setPersistedTheme("matrix");
     const out = renderToString(
       React.createElement(ThemeProvider, {
         children: React.createElement(TokenProbe),
@@ -134,11 +159,10 @@ describe("ThemeProvider", () => {
       { columns: 80 },
     );
     expect(out).toContain("matrix|green|green");
-    store.theme = "dracula";
   });
 
   it("marks the provider's theme as current inside ThemeModal", () => {
-    store.theme = "monochrome";
+        setPersistedTheme("monochrome");
     const out = renderToString(
       React.createElement(ThemeProvider, {
         children: React.createElement(ThemeModal, { isOpen: true, onClose: () => {} }),
@@ -147,12 +171,10 @@ describe("ThemeProvider", () => {
     );
     expect(out).toContain("Monochrome ● (current)");
     expect(out.match(/● \(current\)/g)?.length).toBe(1);
-    store.theme = "dracula";
   });
 
   it("persists the newly selected theme id via writeConfig", async () => {
-    store.theme = "toolify-dark";
-    store.writes.length = 0;
+        setPersistedTheme("toolify-dark");
 
     let captured: ((id: string) => Promise<void>) | null = null;
     function Capture(): React.ReactElement {
@@ -169,9 +191,8 @@ describe("ThemeProvider", () => {
     expect(captured).not.toBeNull();
     await captured!("matrix");
 
-    expect(store.writes.length).toBe(1);
-    expect(store.writes[0]!.theme).toBe("matrix");
-    store.theme = "dracula";
+    const onDisk = JSON.parse(fs.readFileSync(configPath!, "utf8"));
+    expect(onDisk.theme).toBe("matrix");
   });
 });
 
