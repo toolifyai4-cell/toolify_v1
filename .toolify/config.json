@@ -1,5 +1,5 @@
 {
-  "provider": "openrouter",
-  "model": "~deepseek/deepseek-flash-latest",
+  "provider": "openai",
+  "model": "gpt-4o",
   "baseUrl": "https://api.openai.com/v1"
 }

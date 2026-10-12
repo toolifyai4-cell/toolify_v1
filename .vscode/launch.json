@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execBin}",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/extension.js"],
+      "preLaunchTask": "npm: build",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run Extension (Webview Hot Reload)",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execBin}",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/extension.js"],
+      "env": {
+        "TOOLIFY_WEBVIEW_DEV": "true"
+      },
+      "preLaunchTask": "npm: build",
+      "console": "integratedTerminal"
+    }
+  ]
+}

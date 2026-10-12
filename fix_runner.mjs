@@ -1,0 +1,1 @@
+import {writeFileSync} from node:fs;const content=process.argv[2];writeFileSync(process.argv[3],content)

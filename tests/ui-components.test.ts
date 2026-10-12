@@ -418,19 +418,17 @@ describe("MenuScreen renders", () => {
 });
 
 /**
- * Layout regression: completed messages are rendered once via Ink's `<Static>`
- * (which writes to the terminal's native scrollback buffer) and the active
- * (last) message lives in a live region that Ink re-renders for streaming.
- *
- * The root `<Box>` carries a fixed height (sourced from
+ * Layout regression: the root `<Box>` carries a fixed height (sourced from
  * useStdout().stdout.rows — NOT useWindowSize) that matches the terminal
- * viewport.  The inner message-area Box uses flexGrow={1} overflow="hidden"
- * so the input bar and status bar are pinned to the very bottom row of the
- * terminal, matching the Cline layout standard.
+ * viewport.  Completed messages are rendered via Ink's `<Static>`, which
+ * flushes them to the terminal's native scrollback buffer permanently.
+ * The active streaming message (if any) renders live below <Static>,
+ * and a `flexGrow={1}` spacer pushes the input bar and status bar to the
+ * very bottom row of the terminal, matching the Cline layout standard.
  *
- * Scrollback is preserved because clearScreen() + patchTtyForFullScreen()
- * have been removed from chat.tsx — setting a height on the Box does NOT wipe
- * the terminal; only those TTY-patching calls did.
+ * Native terminal scrolling (mouse wheel, track-pad, scrollbar) works
+ * automatically because <Static> writes directly to stdout — no manual
+ * scroll offset, viewport windowing, or mouse-wheel parsing is needed.
  */
 describe("ChatUI fills the terminal height", () => {
   const ROWS = 24;
@@ -477,9 +475,9 @@ describe("ChatUI fills the terminal height", () => {
     expect(promptIndex).toBeLessThan(5);
     expect(inputIndex).toBeGreaterThan(promptIndex); // input sits BELOW the transcript
     expect(statusIndex).toBeGreaterThan(inputIndex); // status sits below the input
-            // Input bar and status bar are pinned to the bottom of the terminal
-    // (height={height} on root Box with fixed height on the message area,
-    // BOTTOM_PANEL_HEIGHT=7 reserved for thinking + input + status).
+                                // Input bar and status bar are pinned to the bottom of the terminal
+                // (flexGrow spacer after <Static> messages, BOTTOM_PANEL_HEIGHT=6:
+                // 3 rows input bar + 3 rows status bar).
         expect(inputIndex).toBeGreaterThanOrEqual(ROWS - 6);
     expect(lines.length).toBeGreaterThanOrEqual(ROWS - 1);
   });
@@ -530,16 +528,16 @@ describe("ChatUI fills the terminal height", () => {
     expect(lines.length).toBeGreaterThanOrEqual(ROWS - 1);
   });
 
-  it("renders all completed messages via <Static> plus the active last message", () => {
+    it("renders all visible messages within the height-constrained active region", () => {
     const messages: ChatMessage[] = [
       { role: "user", content: "first question" },
       { role: "assistant", content: "first answer" },
       { role: "user", content: "second question" },
       { role: "assistant", content: "second answer" },
     ];
-    const out = renderChat({ messages });
-    // All messages render — completed ones via <Static>, the last via the
-    // live active region.
+        const out = renderChat({ messages });
+        // All completed messages render via <Static> — there is no viewport
+    // windowing or message truncation; every message is flushed permanently.
     expect(out).toContain("first question");
     expect(out).toContain("first answer");
     expect(out).toContain("second question");

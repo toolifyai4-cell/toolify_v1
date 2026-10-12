@@ -21,6 +21,12 @@
 export function patchTtyForFullScreen(): void {
   Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
   Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+  // Bun (and some npx/tsx setups) report isTTY=true but still lack
+  // setRawMode — ink calls stdin.setRawMode(true) which would crash.
+  // Provide a no-op so ink proceeds; keys still flow through normally.
+  if (typeof (process.stdin as any).setRawMode !== "function") {
+    (process.stdin as any).setRawMode = () => true;
+  }
 }
 
 /**

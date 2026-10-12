@@ -80,11 +80,11 @@ export interface ToolifyConfig {
   theme?: string;
 }
 
-function configDir(): string {
+export function configDir(): string {
   return resolve(homedir(), TOOLIFY_DIR);
 }
 
-function configPath(): string {
+export function configPath(): string {
   return resolve(homedir(), TOOLIFY_DIR, TOOLIFY_CONFIG_FILE);
 }
 
