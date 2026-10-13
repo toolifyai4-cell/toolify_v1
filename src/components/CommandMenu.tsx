@@ -26,6 +26,24 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
 export const COMMAND_MENU_PAGE_SIZE = 6;
 
 /**
+ * Total terminal rows the menu occupies when open: 2 border rows +
+ * visible command rows + 1 overflow footer row (when hidden commands
+ * remain) + 1 margin row below the box.
+ *
+ * Callers (ChatUI) reserve this from the transcript budget so the frame
+ * always totals exactly the terminal height and Yoga never shrinks the
+ * boxes (which makes menu rows overwrite each other).
+ */
+export function estimateMenuHeight(
+  commandCount: number,
+  pageSize: number = COMMAND_MENU_PAGE_SIZE,
+): number {
+  const visible = Math.min(Math.max(commandCount, 0), Math.max(pageSize, 0));
+  const footer = commandCount > visible ? 1 : 0;
+  return 2 + visible + footer + 1;
+}
+
+/**
  * Filter commands by what the user typed after `/` (case-insensitive
  * prefix match on the name without the leading slash).
  * `/` -> all commands, `/set` -> [/settings], `/zzz` -> [].

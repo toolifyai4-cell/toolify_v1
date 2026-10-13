@@ -10,8 +10,9 @@ import {
 } from "../src/components/ChatUI.js";
 
 /**
- * Tests for Ink's <Static>-based rendering of completed messages and the
- * estimateMessageLines utility function.
+ * Tests for the windowed transcript rendering (completed + active messages
+ * render INSIDE the fixed-height frame) and the estimateMessageLines
+ * utility used to budget the window.
  */
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -134,11 +135,11 @@ describe("estimateMessageLines", () => {
   });
 });
 
-// --- ChatUI <Static> rendering and native scrollback ---
+// --- ChatUI windowed transcript rendering ---
 
-describe("ChatUI <Static> rendering and native scrollback", () => {
-  it("renders all completed messages in output via Static", () => {
-    const messages = buildMessages(5);
+describe("ChatUI windowed transcript", () => {
+  it("renders all completed messages when they fit the window", () => {
+    const messages = buildMessages(2);
     const out = renderToString(
       React.createElement(ChatUI, baseProps({ messages })),
       { columns: 80 },
@@ -146,6 +147,17 @@ describe("ChatUI <Static> rendering and native scrollback", () => {
     for (const m of messages) {
       expect(out).toContain(m.content);
     }
+  });
+
+  it("clips older messages but keeps the newest visible", () => {
+    const messages = buildMessages(8);
+    const out = renderToString(
+      React.createElement(ChatUI, baseProps({ messages })),
+      { columns: 80 },
+    );
+    expect(out).toContain("question 7");
+    expect(out).toContain("answer 7");
+    expect(out).not.toContain("question 0");
   });
 
   it("renders the active streaming message live when isRunning", () => {
@@ -159,7 +171,7 @@ describe("ChatUI <Static> rendering and native scrollback", () => {
     expect(out).toContain("Thinking...");
   });
 
-  it("appends new completed messages to static output on rerender", async () => {
+  it("appends new completed messages to the window on rerender", async () => {
     const messages = buildMessages(5);
     const { stream, writes } = makeStdout(24, 80);
     const stdin = makeStdin();
@@ -225,14 +237,29 @@ describe("ChatUI <Static> rendering and native scrollback", () => {
     expect(out).not.toContain("Press");
   });
 
-  it("renders all messages for large conversations without truncation", () => {
-    const messages = buildMessages(20);
-    const out = renderToString(
-      React.createElement(ChatUI, baseProps({ messages })),
-      { columns: 80 },
-    );
-    for (const m of messages) {
-      expect(out).toContain(m.content);
-    }
+  it("keeps newest messages visible in large conversations; PgUp reaches older ones", async () => {
+    const messages = buildMessages(20); // 40 messages - far beyond the window
+    const { stream, writes } = makeStdout(24, 80);
+    const stdin = makeStdin();
+    const instance = render(React.createElement(ChatUI, baseProps({ messages })), {
+      stdout: stream,
+      stdin,
+      exitOnCtrlC: false,
+      interactive: true,
+    });
+    await sleep(150);
+
+    const initial = frameFrom(writes);
+    expect(initial).toContain("answer 19"); // newest always visible
+    expect(initial).not.toContain("question 0"); // oldest clipped by the window
+
+    // PgUp all the way back (scroll is clamped at messages.length - 1).
+    stdin.push("\x1b[5~".repeat(13));
+    await sleep(300);
+    const scrolled = frameFrom(writes.slice(-6));
+    expect(scrolled).toContain("question 0");
+
+    instance.unmount();
+    await sleep(50);
   });
 });

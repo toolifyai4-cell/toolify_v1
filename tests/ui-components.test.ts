@@ -420,15 +420,13 @@ describe("MenuScreen renders", () => {
 /**
  * Layout regression: the root `<Box>` carries a fixed height (sourced from
  * useStdout().stdout.rows — NOT useWindowSize) that matches the terminal
- * viewport.  Completed messages are rendered via Ink's `<Static>`, which
- * flushes them to the terminal's native scrollback buffer permanently.
- * The active streaming message (if any) renders live below <Static>,
- * and a `flexGrow={1}` spacer pushes the input bar and status bar to the
- * very bottom row of the terminal, matching the Cline layout standard.
- *
- * Native terminal scrolling (mouse wheel, track-pad, scrollbar) works
- * automatically because <Static> writes directly to stdout — no manual
- * scroll offset, viewport windowing, or mouse-wheel parsing is needed.
+ * viewport. Completed AND active messages render INSIDE the frame as a
+ * bounded window (`rows - BOTTOM_PANEL_HEIGHT`), so the transcript stays
+ * visible across every repaint — Ink's win32 full-clear path wipes
+ * scrollback on each frame, so nothing may rely on native scrollback.
+ * Older messages are reached with PgUp / PgDn (in-app scrolling).
+ * The input bar and status bar are pinned to the very bottom row of the
+ * terminal, matching the Cline layout standard.
  */
 describe("ChatUI fills the terminal height", () => {
   const ROWS = 24;

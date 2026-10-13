@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Box, Text, Static, useCursor, useInput, useStdout } from "ink";
+import { Box, Text, useCursor, useInput, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 
-import { CommandMenu, filterSlashCommands } from "./CommandMenu.js";
+import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuHeight } from "./CommandMenu.js";
 import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
@@ -64,6 +64,48 @@ export const YELLOW = "\x1b[33m";
 export const RED = "\x1b[31m";
 export const BLUE_BRIGHT = "\x1b[94m";
 export const RESET = "\x1b[0m";
+
+/** Thinking-spinner glyphs (real code points, not escaped text). */
+export const BALL_ACTIVE = "●";
+export const BALL_IDLE = "○";
+
+/**
+ * Rows reserved for the pinned bottom panel: input margin (1) + bordered
+ * input box (3) + status bar (3). The transcript window occupies
+ * `rows - BOTTOM_PANEL_HEIGHT` rows above it.
+ */
+export const BOTTOM_PANEL_HEIGHT = 7;
+
+/** Messages scrolled per PgUp / PgDn press. */
+export const SCROLL_STEP = 3;
+
+/**
+ * Estimate the rendered height of one message, in terminal rows.
+ *
+ * Used to budget the windowed transcript so the newest messages always fit
+ * inside the fixed-height frame. Deliberately approximate: a small constant
+ * covers the badge row and the padding row between messages.
+ */
+export function estimateMessageLines(m: ChatMessage, columns: number): number {
+  const width = Math.max(16, columns - 4);
+  const wrapCount = (text: string): number => {
+    if (!text) return 0;
+    return text
+      .split("\n")
+      .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / width)), 0);
+  };
+  let lines = 0;
+  if (m.role === "user") {
+    lines += 1 + wrapCount(m.content);
+  } else if (isErrorBanner(m.content)) {
+    lines += wrapCount(m.content);
+  } else {
+    if (m.content) lines += 1; // NEXIPI badge row
+    lines += wrapCount(m.content);
+    lines += (m.toolCalls?.length ?? 0) + (m.toolResults?.length ?? 0);
+  }
+  return Math.max(3, lines + 1); // +1 padding row; short messages render ~3 rows
+}
 
 export function formatTokenCount(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
@@ -144,6 +186,8 @@ export const ChatUI = (props: ChatUIProps) => {
   const [inputValue, setInputValue] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  /** How many messages the transcript window is scrolled back from the newest. */
+  const [scrollBack, setScrollBack] = useState(0);
   const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
   const slashCommands = useMemo(
     () => (slashOpen ? filterSlashCommands(slashQuery) : []),
@@ -159,6 +203,11 @@ export const ChatUI = (props: ChatUIProps) => {
     if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
   }, [slashOpen, slashCommands.length]);
 
+  // A cleared transcript must not keep a stale scroll position.
+  useEffect(() => {
+    if (props.messages.length === 0 && scrollBack !== 0) setScrollBack(0);
+  }, [props.messages.length, scrollBack]);
+
   const [blink, setBlink] = useState(true);
   useEffect(() => {
     const t = setInterval(() => setBlink((b) => !b), 500);
@@ -173,6 +222,17 @@ export const ChatUI = (props: ChatUIProps) => {
 
     if (ch === "\x1f" || (key.ctrl && key.shift && key.backspace)) {
       props.onExit();
+      return;
+    }
+
+    // History scrolling works even while a response is streaming, so it is
+    // handled BEFORE the isRunning guard below.
+    if (key.pageUp) {
+      setScrollBack((s) => Math.min(s + SCROLL_STEP, Math.max(0, props.messages.length - 1)));
+      return;
+    }
+    if (key.pageDown) {
+      setScrollBack((s) => Math.max(0, s - SCROLL_STEP));
       return;
     }
 
@@ -237,19 +297,56 @@ export const ChatUI = (props: ChatUIProps) => {
       props.messages.some((m) => m.thinking && m.role === "assistant") ||
       props.messages.some((m) => m.content === "..."));
 
-  const isStreaming =
-    props.isRunning &&
-    props.messages.length > 0 &&
-    props.messages[props.messages.length - 1].role === "assistant";
-  const activeMessageIndex = isStreaming ? props.messages.length - 1 : -1;
-  const completedMessages =
-    activeMessageIndex >= 0 ? props.messages.slice(0, activeMessageIndex) : props.messages;
-  const activeMessage = activeMessageIndex >= 0 ? props.messages[activeMessageIndex] : undefined;
+  const columns =
+    typeof stdout.columns === "number" && stdout.columns > 0 ? stdout.columns : 80;
+
+  // The slash menu lives in the bottom panel and can add up to ~10 rows
+  // (6 commands + 2 border + 1 footer + 1 margin). When it is open, its
+  // height is RESERVED from the transcript budget so the frame always
+  // totals exactly `rows`. Without this, the column overflows the
+  // fixed-height root and Yoga shrinks every child (all Boxes have
+  // flexShrink: 1 by default) — the menu box gets compressed and its rows
+  // paint at overlapping positions, corrupting the render.
+  const menuOpen = slashOpen && slashCommands.length > 0;
+  const menuPageSize = Math.max(
+    2,
+    Math.min(COMMAND_MENU_PAGE_SIZE, rows - BOTTOM_PANEL_HEIGHT - 8),
+  );
+  const menuRows = menuOpen ? estimateMenuHeight(slashCommands.length, menuPageSize) : 0;
+  const availableHeight = Math.max(4, rows - BOTTOM_PANEL_HEIGHT - menuRows);
+
+  /**
+   * Windowed transcript: pick the newest messages that fit the fixed-height
+   * message area. The newest message is always included (it may be clipped
+   * at its top while streaming). `scrollBack` (PgUp/PgDn) slides the window
+   * toward older messages.
+   */
+  const visibleMessages = useMemo(() => {
+    const all = props.messages;
+    const end = all.length - scrollBack;
+    if (end <= 0) return [] as ChatMessage[];
+    let budget = availableHeight - 2; // reserve rows for the "earlier" indicator
+    const picked: ChatMessage[] = [];
+    for (let i = end - 1; i >= 0; i--) {
+      const m = all[i]!;
+      const h = estimateMessageLines(m, columns);
+      if (picked.length > 0 && h > budget) break;
+      picked.unshift(m);
+      budget -= h;
+      if (budget <= 0) break;
+    }
+    return picked;
+  }, [props.messages, scrollBack, availableHeight, columns]);
 
   return (
-    <Box flexDirection="column" width="100%" minHeight={rows}>
-      {/* 1. OUTSIDE FIXED VIEWPORT: STATIC MESSAGES NEVER GET ERASED/CLIPPED */}
+    <Box flexDirection="column" width="100%" height={rows}>
+      {/* 1. TRANSCRIPT — bounded window INSIDE the frame. Messages are part
+          of the dynamic output, so they stay visible across every repaint.
+          (They used to live in Ink's <Static> above a fullscreen frame,
+          which pushed them out of the viewport into scrollback — where Ink's
+          win32 full-clear path wiped them every ~500ms.) */}
       {modelsActive ? (
+        <Box flexShrink={0} width="100%">
         <ModelsTab
           models={props.models ?? []}
           activeModel={props.activeModel ?? ""}
@@ -258,7 +355,9 @@ export const ChatUI = (props: ChatUIProps) => {
           onCommit={props.onModelsCommit!}
           onClose={props.onModelsClose ?? (() => {})}
         />
+        </Box>
       ) : settingsActive && props.settingsInitial !== undefined && typeof props.onSettingsSave === "function" ? (
+        <Box flexShrink={0} width="100%">
         <SettingsMenu
           initial={props.settingsInitial}
           onSave={props.onSettingsSave}
@@ -268,44 +367,40 @@ export const ChatUI = (props: ChatUIProps) => {
           sessionDir={props.settingsSessionDir}
           usage={props.settingsUsage}
         />
+        </Box>
       ) : (
-        <Static items={completedMessages}>
-          {(m, i) => (
-            <Box key={i} flexDirection="column" paddingBottom={1}>
-              {renderMessageContent(m)}
+        <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0}>
+          {props.messages.length === 0 && !props.isRunning && (
+            <Box paddingTop={1} paddingBottom={1}>
+              <Text>{CYAN}What can I do for you?{RESET}</Text>
             </Box>
           )}
-        </Static>
+          {scrollBack > 0 && (
+            <Box paddingX={1}>
+              <Text dimColor>▲ {scrollBack} earlier · PgDn to return</Text>
+            </Box>
+          )}
+          {visibleMessages.map((m) => (
+            <Box key={props.messages.indexOf(m)} flexDirection="column" paddingBottom={1}>
+              {renderMessageContent(m)}
+            </Box>
+          ))}
+        </Box>
       )}
 
-      {/* 2. DYNAMIC ACTIVE FRAME: STAYS ANCHORED AT BOTTOM */}
-      <Box flexDirection="column" width="100%" flexGrow={1}>
-        {/* Active streaming message */}
-        {activeMessage && (
-          <Box flexDirection="column" paddingBottom={1}>
-            {renderMessageContent(activeMessage)}
-          </Box>
-        )}
-
-        {/* Welcome greeting */}
-        {props.messages.length === 0 && !props.isRunning && !modelsActive && !settingsActive && (
-          <Box paddingTop={1} paddingBottom={1}>
-            <Text>{CYAN}What can I do for you?{RESET}</Text>
-          </Box>
-        )}
-
-        {/* Flexible spacer to force input box to the physical bottom edge */}
-        <Box flexGrow={1} />
-
+      {/* 2. BOTTOM PANEL — slash menu + input + status, pinned to the bottom.
+          flexShrink={0} everywhere so Yoga never compresses these boxes;
+          the menu's height is already reserved from `availableHeight`. */}
+      <Box flexDirection="column" width="100%" flexShrink={0}>
         {/* Floating Slash Command Menu */}
-        {slashOpen && slashCommands.length > 0 && (
-          <Box marginLeft={1} marginBottom={0}>
-            <CommandMenu commands={slashCommands} selectedIndex={slashIndex} />
+        {menuOpen && (
+          <Box marginLeft={1} marginBottom={0} flexShrink={0}>
+            <CommandMenu commands={slashCommands} selectedIndex={slashIndex} pageSize={menuPageSize} />
           </Box>
         )}
 
         {/* Fixed Docked Input Panel */}
-        <Box flexDirection="column" width="100%" marginTop={1}>
+        <Box flexDirection="column" width="100%" marginTop={1} flexShrink={0}>
           <Box borderStyle="round" borderColor="cyan" flexDirection="column" paddingX={1} width="100%">
             <Box alignItems="center">
               <Text>{BLUE_BRIGHT}You {RESET}</Text>
