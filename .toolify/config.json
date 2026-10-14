@@ -1,7 +1,7 @@
 {
   "provider": "openrouter",
-  "model": "stepfun/step-5-preview",
+  "model": "anthropic/claude-3.5-sonnet",
   "baseUrl": "https://api.openai.com/v1",
-  "theme": "monochrome",
+  "theme": "toolify-dark",
   "autoUpdate": true
 }

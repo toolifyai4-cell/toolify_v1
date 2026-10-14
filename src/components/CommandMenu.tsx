@@ -43,6 +43,17 @@ export function estimateMenuHeight(
   return 2 + visible + footer + 1;
 }
 
+/** Name column width inside each menu row. */
+const NAME_COL_WIDTH = 14;
+
+/**
+ * Chrome around the content: 2 (border) + 2 (paddingX) + 1 (measurement
+ * slack). Verified empirically: `NAME_COL_WIDTH + 1 + maxDesc + MENU_CHROME`
+ * equals the natural box width (46 for a 26-char longest description, 51
+ * for 31) — so the box hugs the widest row exactly.
+ */
+const MENU_CHROME = 5;
+
 /**
  * Filter commands by what the user typed after `/` (case-insensitive
  * prefix match on the name without the leading slash).
@@ -92,6 +103,11 @@ export function CommandMenu({
   const visible = commands.slice(start, start + pageSize);
   const hiddenCount = commands.length - visible.length;
 
+  // Stable, content-hugging width: the box fits the widest row exactly and
+  // never changes size while scrolling (only when the filtered list changes).
+  const maxDesc = commands.reduce((m, c) => Math.max(m, c.description.length), 0);
+  const boxWidth = NAME_COL_WIDTH + 1 + maxDesc + MENU_CHROME;
+
     return (
       <Box
       borderStyle="round"
@@ -99,6 +115,8 @@ export function CommandMenu({
       flexDirection="column"
       paddingX={1}
       marginBottom={1}
+      alignItems="stretch"
+      width={boxWidth}
     >
       {visible.map((cmd, i) => {
         const absoluteIndex = start + i;
@@ -110,7 +128,7 @@ export function CommandMenu({
             flexGrow={1}
             backgroundColor={active ? tokens.primary : undefined}
           >
-            <Box width={14} flexShrink={0}>
+            <Box width={NAME_COL_WIDTH} flexShrink={0}>
               <Text
                 color={active ? tokens.textInverted : tokens.text}
                 bold={active}

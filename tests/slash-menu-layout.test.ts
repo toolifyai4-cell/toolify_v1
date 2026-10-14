@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import React from "react";
 import { Readable, Writable } from "node:stream";
 import { render } from "ink";
@@ -191,6 +191,71 @@ describe("slash menu fits the frame without overlap", () => {
       expect(frame).toContain("You /"); // typed slash stays in the input
       expect(inputRow(lines)).toBe(24 - BOTTOM_PANEL_HEIGHT + 2);
       expect(lines.length).toBeGreaterThanOrEqual(23);
+    } finally {
+      instance.unmount();
+      await sleep(50);
+    }
+  });
+  it("keeps the menu box content-hugging and stable across every selection state", async () => {
+    const { stream, writes } = makeStdout(24, 80);
+    const stdin = makeStdin();
+    const instance = render(React.createElement(ChatUI, baseProps()), {
+      stdout: stream,
+      stdin,
+      exitOnCtrlC: false,
+      interactive: true,
+    });
+    const borderWidth = async (): Promise<number> => {
+      const idx = writes.length;
+      await sleep(700); // >= 1 blink tick -> a full frame
+      const frame = latestFrame(writes.slice(idx));
+      const borderLine = frame.split("\n").find((l) => l.includes("\u256d"));
+      return borderLine ? borderLine.replace(/^\s+/, "").length : -1;
+    };
+    try {
+      await sleep(200);
+      stdin.push("/");
+      await sleep(250);
+
+      // Every selection state renders the SAME border: 14 + 1 + 31 + 5 = 51
+      // (the widest row, /usage). The box must never shrink-to-fit or jump
+      // size as the window scrolls.
+      expect(await borderWidth()).toBe(51);
+      stdin.push("\x1b[B\x1b[B\x1b[B");
+      await sleep(120);
+      expect(await borderWidth()).toBe(51);
+      stdin.push("\x1b[B\x1b[B\x1b[B\x1b[B");
+      await sleep(120);
+      expect(await borderWidth()).toBe(51);
+    } finally {
+      instance.unmount();
+      await sleep(50);
+    }
+  });
+  it("shrinks the box to fit the filtered words (/h -> 45 cols)", async () => {
+    const { stream, writes } = makeStdout(24, 80);
+    const stdin = makeStdin();
+    const instance = render(React.createElement(ChatUI, baseProps()), {
+      stdout: stream,
+      stdin,
+      exitOnCtrlC: false,
+      interactive: true,
+    });
+    const borderWidth = async (): Promise<number> => {
+      const idx = writes.length;
+      await sleep(700);
+      const frame = latestFrame(writes.slice(idx));
+      const borderLine = frame.split("\n").find((l) => l.includes("\u256d"));
+      return borderLine ? borderLine.replace(/^\s+/, "").length : -1;
+    };
+    try {
+      await sleep(200);
+      stdin.push("/");
+      await sleep(120);
+      stdin.push("h"); // filter to /help + /history (longest desc: 25)
+      await sleep(250);
+      // Box hugs just the filtered words: 14 + 1 + 25 + 5 = 45.
+      expect(await borderWidth()).toBe(45);
     } finally {
       instance.unmount();
       await sleep(50);

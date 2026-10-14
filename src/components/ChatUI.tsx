@@ -346,7 +346,7 @@ export const ChatUI = (props: ChatUIProps) => {
           which pushed them out of the viewport into scrollback — where Ink's
           win32 full-clear path wiped them every ~500ms.) */}
       {modelsActive ? (
-        <Box flexShrink={0} width="100%">
+        <Box flexShrink={0} width="100%" height={availableHeight}>
         <ModelsTab
           models={props.models ?? []}
           activeModel={props.activeModel ?? ""}
@@ -357,7 +357,7 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : settingsActive && props.settingsInitial !== undefined && typeof props.onSettingsSave === "function" ? (
-        <Box flexShrink={0} width="100%">
+        <Box flexShrink={0} width="100%" height={availableHeight}>
         <SettingsMenu
           initial={props.settingsInitial}
           onSave={props.onSettingsSave}
