@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { ModelDescriptor } from "../models/model-registry.js";
@@ -91,6 +91,17 @@ export const ModelsTab = (props: ModelsTabProps) => {
   const above = start;
   const below = Math.max(filtered.length - (start + visibleRows), 0);
 
+  // Fixed-geometry viewport so the modal box never resizes between repaints
+  // (fixes win32 ghost-border fragments left when a taller frame shrinks:
+  // open->loading->list transitions, search/scroll, the above/below overflow
+  // rows toggling, and the footer's 1-line vs 2-line wrap). The viewport is
+  // always `visibleRows + 2` rows: one reserved slot each for the above/below
+  // overflow lines plus exactly `visibleRows` model rows (short lists pad
+  // the tail with blank filler rows). The footer is also pinned at 2 rows
+  // (its hint text wraps to 2 rows at width 78) so the box bottom is stable.
+  const noMatch = filtered.length === 0;
+  const fillerRows = Math.max(0, visibleRows - visible.length - (noMatch ? 1 : 0));
+
   const activeProviderName = props.models.find(m => m.providerId === props.activeProviderId)?.providerName ?? props.activeProviderId;
 
   useInput((input, key) => {
@@ -164,12 +175,14 @@ export const ModelsTab = (props: ModelsTabProps) => {
         )}
 
         {props.models.length === 0 && !props.loading ? (
-          <Box flexDirection="column" paddingX={1} paddingY={1}>
-            <Text bold color={tokens.warning}>
-              [!] No configured providers found. Run /settings or press Enter to add an API key.
-            </Text>
-            <Box height={1} />
-            <Text dimColor>Press Enter or Esc to go back.</Text>
+          <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
+            <Box height={visibleRows + 7} flexDirection="column" justifyContent="flex-start">
+              <Text bold color={tokens.warning}>
+                [!] No configured providers found. Run /settings or press Enter to add an API key.
+              </Text>
+              <Box height={1} />
+              <Text dimColor>Press Enter or Esc to go back.</Text>
+            </Box>
           </Box>
         ) : (
           <>
@@ -183,8 +196,13 @@ export const ModelsTab = (props: ModelsTabProps) => {
                 />
               </Box>
             </Box>
-            <Box flexDirection="column" paddingX={1}>
-              {above > 0 && <Text dimColor>▲ {above} more</Text>}
+            {/* Fixed-height viewport: reserved above/below slots + exactly visibleRows rows. */}
+            <Box flexDirection="column" paddingX={1} flexShrink={0}>
+              {above > 0 ? (
+                <Text dimColor>▲ {above} more</Text>
+              ) : (
+                <Text> </Text>
+              )}
               {visible.map((m, i) => {
                 const isActive = start + i === index;
                 const isCurrent = m.id === props.activeModel && m.providerId === props.activeProviderId;
@@ -217,14 +235,19 @@ export const ModelsTab = (props: ModelsTabProps) => {
                   </Box>
                 );
               })}
-              {below > 0 && <Text dimColor>▼ {below} more</Text>}
+              {below > 0 ? (
+                <Text dimColor>▼ {below} more</Text>
+              ) : (
+                <Text> </Text>
+              )}
               {filtered.length === 0 && <Text dimColor>No models match "{query}".</Text>}
+              {Array.from({length: fillerRows}, () => <Text key={`f-${Math.random()}`}> </Text>)}
             </Box>
           </>
         )}
+        {/* Footer pinned at 2 rows: the hint wraps to 2 lines at width 78. */}
 
-        <Box height={1} />
-        <Box paddingX={1}>
+        <Box paddingX={1} height={2} flexShrink={0}>
           <Text dimColor>
             Type to search, ↑/↓ navigate, Enter to select, Tab to change provider, Esc to close
           </Text>

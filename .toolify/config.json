@@ -1,7 +1,5 @@
 {
-  "provider": "openrouter",
-  "model": "anthropic/claude-3.5-sonnet",
-  "baseUrl": "https://api.openai.com/v1",
-  "theme": "toolify-dark",
-  "autoUpdate": true
+  "provider": "openai",
+  "model": "gpt-4o",
+  "baseUrl": "https://api.openai.com/v1"
 }

@@ -183,35 +183,26 @@ interface ModelPickerModalProps {
   readonly onClose: () => void;
 }
 
-/** Modal wrapper around ModelsTab for the settings model picker. */
+/** Modal wrapper around ModelsTab for the settings model picker.
+ *
+ * Renders ModelsTab directly — ModelsTab owns its own bordered box
+ * (width 78, round border) and a fixed-geometry viewport, so wrapping it
+ * in a second bordered Box with a hard-coded height={20} (too short for
+ * the viewport) produced nested borders and clipped the bottom rows.
+ * Keeping the wrapper borderless and height-unconstrained makes the
+ * settings path render identically to the direct /models path in ChatUI.
+ */
 function ModelPickerModal(props: ModelPickerModalProps): React.ReactElement {
-  const { tokens } = useTheme();
   return (
-    <Box width="100%" height={20} justifyContent="center" alignItems="center">
-      <Box
-        borderStyle="round"
-        borderColor={tokens.border}
-        flexDirection="column"
-        paddingX={2}
-        paddingY={1}
-        width={78}
-      >
-        <Box justifyContent="space-between" paddingX={1}>
-          <Text bold color={tokens.primary}>Select Model</Text>
-          <Text dimColor>[Esc] Close</Text>
-        </Box>
-        <Box height={1} />
-        <ModelsTab
-          models={props.models}
-          activeModel={props.activeModel}
-          activeProviderId={props.activeProviderId}
-          loading={props.loading}
-          isActive={props.isActive ?? true}
-          onCommit={props.onCommit}
-          onClose={props.onClose}
-        />
-      </Box>
-    </Box>
+    <ModelsTab
+      models={props.models}
+      activeModel={props.activeModel}
+      activeProviderId={props.activeProviderId}
+      loading={props.loading}
+      isActive={props.isActive ?? true}
+      onCommit={props.onCommit}
+      onClose={props.onClose}
+    />
   );
 }
 
