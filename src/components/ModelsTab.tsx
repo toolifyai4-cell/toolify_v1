@@ -150,7 +150,6 @@ export const ModelsTab = (props: ModelsTabProps) => {
             <Text dimColor>(tab to change provider)</Text>
           ) : null}
         </Box>
-        <Box height={1} flexShrink={0} />
         <Box paddingX={1} flexShrink={0}>{statusLine ? <Text dimColor>{statusLine}</Text> : <Text> </Text>}</Box>
 
         {/* Fallback warning: Only render when active to eliminate dead space */}
@@ -181,14 +180,14 @@ export const ModelsTab = (props: ModelsTabProps) => {
             </Box>
           </Box>
         ) : (
-          <Box flexDirection="column" flexShrink={0} height={visibleRows + 6}>
+          <Box flexDirection="column" flexShrink={0} height={visibleRows + 7}>
             <Box marginY={1} paddingX={1}>
               <Box borderStyle="single" borderColor={tokens.border} paddingX={1} paddingY={0} width="100%">
                 <TextInput
                   focus={true}
                   value={query}
                   onChange={setQuery}
-                  placeholder="Type to search models..."
+                  placeholder=" Type to search models..."
                 />
               </Box>
             </Box>
