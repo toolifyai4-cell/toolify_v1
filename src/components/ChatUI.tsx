@@ -352,6 +352,7 @@ export const ChatUI = (props: ChatUIProps) => {
           activeModel={props.activeModel ?? ""}
           activeProviderId={props.activeProviderId ?? ""}
           loading={props.modelsLoading}
+          visibleRows={6}
           onCommit={props.onModelsCommit!}
           onClose={props.onModelsClose ?? (() => {})}
         />

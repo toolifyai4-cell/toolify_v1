@@ -91,13 +91,29 @@ describe("slash menu fits the frame without overlap", () => {
       await sleep(700); // >= 1 blink tick -> a full frame after the settle point
       const frame = latestFrame(writes.slice(settleIdx));
 
+      // The command list now lives inside the centered SlashModal (double-bordered).
+      // Command names are present; the list is a single contiguous copy.
       for (const name of ["/settings", "/model", "/theme", "/account", "/history", "/help"]) {
         expect(countOccurrences(frame, name)).toBe(1);
       }
-      expect(countOccurrences(frame, "2 more")).toBe(1);
-      expect(frame).toContain("Switch model or provider");
-      expect(countOccurrences(frame, "Modify agent configuration")).toBe(1);
-      expect(countOccurrences(frame, "View Toolify account")).toBe(1);
+      // Double-border separator lines distinguish consecutive matching commands
+      // so each description appears exactly once between the two frame edges.
+      const descs = [
+        "Modify agent configuration",
+        "Switch model or provider",
+        "Change color theme",
+        "View Toolify account",
+        "Recent conversation turns",
+        "Show available commands",
+      ];
+      for (const d of descs) {
+        if (countOccurrences(frame, d) !== 1) {
+          console.error('Frame:', JSON.stringify(frame));
+          console.error('Looking for:', d);
+          console.error('Count:', countOccurrences(frame, d));
+        }
+        expect(countOccurrences(frame, d)).toBe(1);
+      }
       expect(frame).not.toContain("themeovider"); // overlap garbage
       expect(frame).toContain("You /"); // input box shows the typed slash
     } finally {
