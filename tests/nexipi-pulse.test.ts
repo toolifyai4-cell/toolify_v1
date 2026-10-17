@@ -10,7 +10,7 @@ import {
 import { NEXIPI_STAGES } from "../src/agent/nexipi-stages.js";
 
 describe("NexipiQuadrantPulse", () => {
-  it("renders the spec line: ◐ [NEXIPI-CORE] <label> <detail> (n/7)", () => {
+    it("renders the spec line: ◐ [NEXIPI-CORE] <label> <detail>", () => {
     const out = renderToString(
       React.createElement(NexipiQuadrantPulse, {
         isThinking: true,
@@ -23,16 +23,16 @@ describe("NexipiQuadrantPulse", () => {
     expect(out).toContain("[NEXIPI-CORE]");
     expect(out).toContain("Fluxing action...");
     expect(out).toContain("Writing src/components/Header.tsx");
-    expect(out).toContain("(6/7)");
+        expect(out).toContain("◐ [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx");
   });
 
-  it("renders every stage label with the correct fraction", () => {
+    it("renders every stage label with the spec line", () => {
     for (const { n, label } of NEXIPI_STAGES) {
       const out = renderToString(
         React.createElement(NexipiQuadrantPulse, { isThinking: true, activeStage: n }),
         { columns: 80 },
       );
-      expect(out).toContain(`(${n}/7)`);
+            expect(out).toContain(`◐ [NEXIPI-CORE] ${label}`);
       expect(out).toContain(label);
       expect(out).toContain("[NEXIPI-CORE]");
     }
@@ -43,7 +43,7 @@ describe("NexipiQuadrantPulse", () => {
       React.createElement(NexipiQuadrantPulse, { isThinking: true, activeStage: 2 }),
       { columns: 80 },
     );
-    expect(out).toContain("[NEXIPI-CORE] Deconstructing prompt... (2/7)");
+        expect(out).toContain("[NEXIPI-CORE] Deconstructing prompt...");
   });
 
   it("renders nothing when not thinking (idle)", () => {
@@ -59,8 +59,7 @@ describe("NexipiQuadrantPulse", () => {
       React.createElement(NexipiQuadrantPulse, { isThinking: true }),
       { columns: 80 },
     );
-    expect(out).toContain("Deconstructing prompt...");
-    expect(out).toContain("(2/7)");
+        expect(out).toContain("Deconstructing prompt...");
   });
 
     it("cycles the quadrant glyph every 4 frames at a 120ms cadence (fake timers)", () => {

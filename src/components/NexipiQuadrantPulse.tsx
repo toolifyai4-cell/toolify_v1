@@ -25,10 +25,10 @@ export interface NexipiQuadrantPulseProps {
 /**
  * Dynamic quadrant thinking indicator.
  *
- *   ◐ [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx (6/7)
+ *   ◐ [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx
  *
  * - The glyph rotates continuously at ~120ms while `isThinking` is true.
- * - The text line (stage + label + detail + fraction) reflects ONLY the
+  * - The text line (stage + label + detail) reflects ONLY the
  *   active stage passed in from the agent runtime — this component holds
  *   no stage state of its own.
  */
@@ -40,8 +40,8 @@ export function NexipiQuadrantPulse({
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    if (!isThinking) return;
-        setFrame(0);
+        if (!isThinking) return;
+    setFrame(0);
     const id = setInterval(
       () => setFrame((f) => (f + 1) % NEXIPI_GLYPHS.length),
       NEXIPI_GLYPH_INTERVAL_MS,
@@ -56,14 +56,14 @@ export function NexipiQuadrantPulse({
 
   const stage: NexipiStage = activeStage && activeStage >= 1 ? activeStage : 2;
   const label = nexipiLabel(stage) ?? "Thinking...";
-    const detail = currentDetailMessage || "";
+  const detail = currentDetailMessage || "";
   const line = detail
-    ? `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label} ${detail} (${stage}/7)`
-    : `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label} (${stage}/7)`;
+    ? `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label} ${detail}`
+    : `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label}`;
 
   return (
-        <Box width="100%" flexShrink={0}>
-      <Text color="yellow" wrap="truncate">
+    <Box width="100%" flexShrink={0}>
+      <Text color="white" wrap="truncate">
         {line}
       </Text>
     </Box>
