@@ -6,6 +6,7 @@ import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuH
 import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
+import { ThemeModal } from "./ThemeModal.js";
 import type { ModelDescriptor } from "../models/model-registry.js";
 import type { SettingsDraft } from "./settings.js";
 
@@ -55,6 +56,8 @@ export interface ChatUIProps {
   readonly activeProviderId?: string;
   readonly onModelsCommit?: (modelId: string, providerId: string) => void;
   readonly onModelsClose?: () => void;
+  readonly themeOpen?: boolean;
+  readonly onThemeClose?: () => void;
 }
 
 export const DIM = "\x1b[2m";
@@ -218,7 +221,7 @@ export const ChatUI = (props: ChatUIProps) => {
   const modelsActive = props.modelsOpen === true && typeof props.onModelsCommit === "function";
 
   useInput((ch, key) => {
-    if (props.settingsOpen === true || props.modelsOpen === true) return;
+    if (props.settingsOpen === true || props.modelsOpen === true || props.themeOpen === true) return;
 
     if (ch === "\x1f" || (key.ctrl && key.shift && key.backspace)) {
       props.onExit();
@@ -345,7 +348,11 @@ export const ChatUI = (props: ChatUIProps) => {
           (They used to live in Ink's <Static> above a fullscreen frame,
           which pushed them out of the viewport into scrollback — where Ink's
           win32 full-clear path wiped them every ~500ms.) */}
-      {modelsActive ? (
+      {props.themeOpen === true ? (
+        <Box flexShrink={0} width="100%" height={availableHeight}>
+          <ThemeModal isOpen={true} onClose={props.onThemeClose ?? (() => {})} />
+        </Box>
+      ) : modelsActive ? (
         <Box flexShrink={0} width="100%" height={availableHeight}>
         <ModelsTab
           models={props.models ?? []}

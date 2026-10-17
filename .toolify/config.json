@@ -1,5 +1,7 @@
 {
-  "provider": "openai",
-  "model": "gpt-4o",
-  "baseUrl": "https://api.openai.com/v1"
+  "provider": "openrouter",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "baseUrl": "https://api.openai.com/v1",
+  "theme": "toolify-dark",
+  "autoUpdate": true
 }

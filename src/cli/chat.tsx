@@ -65,8 +65,11 @@ export function ChatHost({
   const [modelsOpen, setModelsOpen] = React.useState(false);
   const [modelsList, setModelsList] = React.useState<ModelDescriptor[] | null>(null);
   const [modelsLoading, setModelsLoading] = React.useState(false);
+  // --- /theme picker state ---
+  const [themeOpen, setThemeOpen] = React.useState(false);
 
   // --- Quota state (read from getQuota() per current model/provider) ---
+
   const quota = React.useMemo(() =>
     getQuota(liveCfg.provider, liveCfg.model) ?? null,
   [liveCfg.provider, liveCfg.model]);
@@ -264,7 +267,8 @@ export function ChatHost({
         }
         else if (cmd === "/settings") setSettingsOpen(true);
         else if (cmd === "/model" || cmd === "/models") openModels();
-        else if (cmd === "/" || cmd === "/menu" || cmd === "/theme" || cmd === "/account") setShowMenu(true);
+        else if (cmd === "/theme") setThemeOpen(true);
+        else if (cmd === "/" || cmd === "/menu" || cmd === "/account") setShowMenu(true);
         return;
       }
 
@@ -454,6 +458,8 @@ export function ChatHost({
       activeProviderId={liveCfg.provider}
       onModelsCommit={commitModel}
       onModelsClose={closeModels}
+      themeOpen={themeOpen}
+      onThemeClose={() => setThemeOpen(false)}
     />
     );
 }

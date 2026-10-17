@@ -142,15 +142,17 @@ export const ModelsTab = (props: ModelsTabProps) => {
         flexDirection="column"
         paddingX={2}
         paddingY={1}
-        width={65}
+        width={78}
       >
         <Box justifyContent="space-between" paddingX={1} flexShrink={0}>
           <Text bold color={tokens.primary}>Provider: {activeProviderName}</Text>
-          {providerFilters.length > 1 ? (
-            <Text dimColor>(tab to change provider)</Text>
-          ) : null}
+          <Text dimColor>[Esc] Close</Text>
         </Box>
-        <Box paddingX={1} flexShrink={0}>{statusLine ? <Text dimColor>{statusLine}</Text> : <Text> </Text>}</Box>
+        {providerFilters.length > 1 && (
+          <Box paddingX={1} flexShrink={0}>
+            <Text dimColor>(tab to change provider)</Text>
+          </Box>
+        )}
 
         {/* Fallback warning: Only render when active to eliminate dead space */}
         {fallbackActive && (

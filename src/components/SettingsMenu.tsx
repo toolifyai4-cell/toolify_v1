@@ -194,26 +194,16 @@ interface ModelPickerModalProps {
  */
 function ModelPickerModal(props: ModelPickerModalProps): React.ReactElement {
   return (
-    <Box
-      width="100%"
-      height="100%"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-    >
-      <Box width={65} overflow="hidden" flexDirection="column">
-        <ModelsTab
-          models={props.models}
-          activeModel={props.activeModel}
-          activeProviderId={props.activeProviderId}
-          loading={props.loading}
-          isActive={props.isActive ?? true}
-          onCommit={props.onCommit}
-          onClose={props.onClose}
-          visibleRows={6}
-        />
-      </Box>
-    </Box>
+    <ModelsTab
+      models={props.models}
+      activeModel={props.activeModel}
+      activeProviderId={props.activeProviderId}
+      loading={props.loading}
+      isActive={props.isActive ?? true}
+      onCommit={props.onCommit}
+      onClose={props.onClose}
+      visibleRows={6}
+    />
   );
 }
 
