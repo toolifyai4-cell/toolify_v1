@@ -127,7 +127,14 @@ export type AgentEvent =
   | { type: "loop_warning"; message: string; ts: number }
   | { type: "verification"; command: string; passed: boolean; output: string; ts: number }
   | { type: "digest_updated"; digest: string; ts: number }
-  | { type: "error"; message: string; ts: number }
+      | { type: "error"; message: string; ts: number }
+  | {
+      type: "nexipi_stage";
+      stage: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      label: string;
+      detail?: string;
+      ts: number;
+    }
   | { type: "run_finished"; reason: FinishReason | "budget" | "loop_detected" | "interrupted"; ts: number };
 
 export interface ModelPricing {

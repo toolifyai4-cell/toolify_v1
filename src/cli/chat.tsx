@@ -15,6 +15,7 @@ import type { SettingsDraft } from "../components/settings.js";
 import { getAllConfiguredModels, type ModelDescriptor } from "../models/model-registry.js";
 import { getQuota } from "../models/quota-tracker.js";
 import { ChatUI, type ChatMessage } from "../components/ChatUI.js";
+import type { NexipiStage } from "../agent/nexipi-stages.js";
 import { buildSessionSummary } from "./session-summary.js";
 import { ThemeProvider } from "../theme/ThemeContext.js";
 import { MenuScreen } from "../components/MenuScreen.js";
@@ -55,7 +56,9 @@ export function ChatHost({
   const [autoApprove, setAutoApprove] = React.useState<AutoApproveMode>("off");
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = React.useState(false);
-  const [turnCount, setTurnCount] = React.useState(0);
+    const [turnCount, setTurnCount] = React.useState(0);
+  const [activeStage, setActiveStage] = React.useState<NexipiStage>(0);
+  const [stageDetail, setStageDetail] = React.useState("");
   const turnCountRef = React.useRef(0);
   const loopRef = React.useRef<AgentLoop | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
@@ -362,8 +365,15 @@ export function ChatHost({
         },
       });
 
-      await deps.sessions.init();
+            await deps.sessions.init();
       await deps.checkpoints.init();
+
+      const unsubscribeStage = deps.eventBus.subscribe((e) => {
+        if (e.type === "nexipi_stage") {
+          setActiveStage(e.stage);
+          setStageDetail(e.detail ?? "");
+        }
+      });
 
       const loop = createAgentLoop(deps);
 
@@ -383,7 +393,10 @@ export function ChatHost({
         // showed "Tokens: 0" even though the session log recorded real usage.
         meterRef.current!.add(deps.meter.usage);
         setTurnCount((t) => t); // re-render so the status bar refreshes
-        setIsRunning(false);
+                setIsRunning(false);
+        unsubscribeStage();
+        setActiveStage(0);
+        setStageDetail("");
         abortControllerRef.current = null;
         // Drop ANY leftover thinking placeholder, not just a trailing one.
         // A turn that produces no assistant text (tool-only, error, or abort)
@@ -432,7 +445,10 @@ export function ChatHost({
       mode={mode}
       autoApprove={autoApprove}
       workspace={workspace}
-      isRunning={isRunning}
+            isRunning={isRunning}
+      isThinking={isRunning}
+      activeStage={activeStage}
+      currentDetailMessage={stageDetail || undefined}
       onSubmit={onSubmit}
       onModeToggle={() => setMode((m) => (m === "plan" ? "act" : "plan"))}
       onAutoApproveToggle={() =>

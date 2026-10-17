@@ -5,6 +5,8 @@ import type { ModelDescriptor } from "../models/model-registry.js";
 import { getQuota } from "../models/quota-tracker.js";
 import { useTheme } from "../theme/ThemeContext.js";
 import { formatTokenCount } from "./ChatUI.js";
+import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 
 /** Check if any models in the list are fallback (cached/offline) data. */
 function hasFallbackModels(models: readonly ModelDescriptor[]): boolean {
@@ -115,6 +117,22 @@ export const ModelsTab = (props: ModelsTabProps) => {
       }
       const picked = filtered[index];
       if (picked) props.onCommit(picked.id, picked.providerId);
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'v') {
+      setQuery((prev) => prev + readFromClipboard());
+      return;
+    }
+    if (key.ctrl && key.backspace) {
+      setQuery((prev) => deleteWordLeft(prev));
+      return;
+    }
+    if (key.ctrl && key.delete) {
+      setQuery((prev) => deleteWordRight(prev));
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'u') {
+      setQuery("");
       return;
     }
   }, { isActive: props.isActive ?? true });

@@ -128,7 +128,7 @@ describe("Chat transcript stays visible (hidden-transcript regression)", () => {
       const frame = stripAnsi(writes.join(""));
       expect(frame).toContain("second question"); // the in-flight prompt
       expect(frame).toContain("first answer"); // prior turn still visible
-      expect(frame).toContain("Thinking...");
+            expect(frame).toContain("[NEXIPI-CORE]");
     } finally {
       instance.unmount();
       await sleep(50);

@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "model": "xingchen-agi/xing4.0-29b-a4b:free",
   "baseUrl": "https://api.openai.com/v1",
   "theme": "toolify-dark",
   "autoUpdate": true

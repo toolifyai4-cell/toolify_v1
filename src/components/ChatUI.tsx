@@ -7,8 +7,12 @@ import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import { ThemeModal } from "./ThemeModal.js";
+import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 import type { ModelDescriptor } from "../models/model-registry.js";
 import type { SettingsDraft } from "./settings.js";
+import { NEXIPI_IDLE, type NexipiStage } from "../agent/nexipi-stages.js";
+import { NexipiQuadrantPulse } from "./NexipiQuadrantPulse.js";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -57,7 +61,13 @@ export interface ChatUIProps {
   readonly onModelsCommit?: (modelId: string, providerId: string) => void;
   readonly onModelsClose?: () => void;
   readonly themeOpen?: boolean;
-  readonly onThemeClose?: () => void;
+     readonly onThemeClose?: () => void;
+  /** NEXIPI pulse: animate the quadrant thinking indicator. */
+  readonly isThinking?: boolean;
+  /** Active NEXIPI stage (1..7). Defaults to 2 (Deconstructing) while running. */
+  readonly activeStage?: NexipiStage;
+  /** Runtime-derived detail line for the current stage ("Writing src/…"). */
+  readonly currentDetailMessage?: string;
 }
 
 export const DIM = "\x1b[2m";
@@ -238,6 +248,21 @@ export const ChatUI = (props: ChatUIProps) => {
       setScrollBack((s) => Math.max(0, s - SCROLL_STEP));
       return;
     }
+    // Transcript scroll (1 message per press). Guarded by `!slashOpen` so the
+    // arrow keys keep navigating the floating command-menu when it is open,
+    // and skipped by the modal early-return above when settings/models/themes
+    // are active (those overlays replace the transcript). Handled before the
+    // `isRunning` guard so scrolling works while a response is streaming.
+    if (!slashOpen && key.upArrow) {
+      setScrollBack((current) =>
+        Math.min(current + 1, Math.max(0, props.messages.length - 1)),
+      );
+      return;
+    }
+    if (!slashOpen && key.downArrow) {
+      setScrollBack((current) => Math.max(0, current - 1));
+      return;
+    }
 
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
     if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
@@ -264,6 +289,49 @@ export const ChatUI = (props: ChatUIProps) => {
       return;
     }
     if (props.isRunning) return;
+    // --- Terminal editing shortcuts ---
+    if (key.ctrl && key.shift && (key as { name?: string }).name === 'c') {
+      copyToClipboard(inputValue);
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'v') {
+      setInputValue((prev) => prev + readFromClipboard());
+      return;
+    }
+    if (key.ctrl && key.backspace) {
+      setInputValue((prev) => {
+        const next = deleteWordLeft(prev);
+        if (!next.startsWith("/")) closeSlashMenu();
+        else setSlashIndex(0);
+        return next;
+      });
+      return;
+    }
+    if (key.ctrl && key.delete) {
+      setInputValue((prev) => {
+        const next = deleteWordRight(prev);
+        if (!next.startsWith("/")) closeSlashMenu();
+        else setSlashIndex(0);
+        return next;
+      });
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'u') {
+      setInputValue("");
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'a') {
+      // Cursor-aware home not available in plain Ink input; no-op in v1
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'e') {
+      // Cursor-aware end not available in plain Ink input; no-op in v1
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'k') {
+      // Clear to end: no-op in v1 (cursor position unknown)
+      return;
+    }
     if (key.return) {
       const v = inputValue.trim();
       if (v) { setInputValue(""); props.onSubmit(v); }
@@ -293,12 +361,12 @@ export const ChatUI = (props: ChatUIProps) => {
     }
   });
 
-  const isChatView = !modelsActive && !settingsActive;
-  const showThinking =
-    isChatView &&
-    (props.isRunning ||
-      props.messages.some((m) => m.thinking && m.role === "assistant") ||
-      props.messages.some((m) => m.content === "..."));
+    const isChatView = !modelsActive && !settingsActive;
+  const thinking = isChatView && Boolean(props.isThinking ?? props.isRunning);
+  const activeStage: NexipiStage =
+    props.activeStage && props.activeStage >= 1 ? props.activeStage : thinking ? 2 : NEXIPI_IDLE;
+  // The pulse adds one row to the pinned bottom panel while it is visible.
+  const panelReserve = BOTTOM_PANEL_HEIGHT + (thinking ? 1 : 0);
 
   const columns =
     typeof stdout.columns === "number" && stdout.columns > 0 ? stdout.columns : 80;
@@ -313,10 +381,10 @@ export const ChatUI = (props: ChatUIProps) => {
   const menuOpen = slashOpen && slashCommands.length > 0;
   const menuPageSize = Math.max(
     2,
-    Math.min(COMMAND_MENU_PAGE_SIZE, rows - BOTTOM_PANEL_HEIGHT - 8),
+        Math.min(COMMAND_MENU_PAGE_SIZE, rows - panelReserve - 8),
   );
   const menuRows = menuOpen ? estimateMenuHeight(slashCommands.length, menuPageSize) : 0;
-  const availableHeight = Math.max(4, rows - BOTTOM_PANEL_HEIGHT - menuRows);
+    const availableHeight = Math.max(4, rows - panelReserve - menuRows);
 
   /**
    * Windowed transcript: pick the newest messages that fit the fixed-height
@@ -388,8 +456,8 @@ export const ChatUI = (props: ChatUIProps) => {
               <Text dimColor>▲ {scrollBack} earlier · PgDn to return</Text>
             </Box>
           )}
-          {visibleMessages.map((m) => (
-            <Box key={props.messages.indexOf(m)} flexDirection="column" paddingBottom={1}>
+          {visibleMessages.map((m, idx) => (
+            <Box key={idx} flexDirection="column" paddingBottom={1}>
               {renderMessageContent(m)}
             </Box>
           ))}
@@ -408,7 +476,14 @@ export const ChatUI = (props: ChatUIProps) => {
         )}
 
         {/* Fixed Docked Input Panel */}
-        <Box flexDirection="column" width="100%" marginTop={1} flexShrink={0}>
+                <Box flexDirection="column" width="100%" marginTop={1} flexShrink={0}>
+          {thinking && (
+            <NexipiQuadrantPulse
+              isThinking={thinking}
+              activeStage={activeStage}
+              currentDetailMessage={props.currentDetailMessage}
+            />
+          )}
           <Box borderStyle="round" borderColor="cyan" flexDirection="column" paddingX={1} width="100%">
             <Box alignItems="center">
               <Text>{BLUE_BRIGHT}You {RESET}</Text>
@@ -451,12 +526,7 @@ export const ChatUI = (props: ChatUIProps) => {
                     <Text color="red">[Quota Exceeded — Resets in {props.status.resetTime}]</Text>
                   </>
                 )}
-                {showThinking && (
-                  <>
-                    <Text dimColor> | </Text>
-                    <Text color="yellow">Thinking...</Text>
-                  </>
-                )}
+                
               </Text>
               <Text dimColor>{props.workspace}</Text>
               <Text dimColor>

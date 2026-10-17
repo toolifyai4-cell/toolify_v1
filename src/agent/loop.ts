@@ -6,6 +6,7 @@ import type {
   ToolCall,
   ToolSchema,
 } from "./types.js";
+import { nexipiLabel, nexipiToolStage, type NexipiStage } from "./nexipi-stages.js";
 import type { TaskDigest } from "./digest.js";
 import type { ContextManager } from "./context.js";
 import type { CostMeter } from "./meter.js";
@@ -402,15 +403,37 @@ export class AgentLoop {
     return lines.join("\n");
   }
 
-  private async emit(e: AgentEvent): Promise<void> {
+    private async emit(e: AgentEvent): Promise<void> {
     await this.opts.sessions.append(e);
     this.opts.eventBus?.emit(e);
   }
 
+  /**
+   * Broadcast a transient NEXIPI stage tick to UI subscribers.
+   *
+   * Stage events are ephemeral — they only animate the quadrant pulse in the
+   * TUI and are NOT persisted to the JSONL session log (use `emit` for that).
+   */
+  private notifyStage(
+    stage: Exclude<NexipiStage, 0>,
+    detail?: string,
+  ): void {
+    this.opts.eventBus?.emit({
+      type: "nexipi_stage",
+      stage,
+      label: nexipiLabel(stage) ?? "",
+      detail,
+      ts: Date.now(),
+    });
+  }
+
+
   async run(userGoal: string): Promise<AgentRunResult> {
     const o = this.opts;
-    o.digest.setGoal(userGoal);
+        o.digest.setGoal(userGoal);
+    this.notifyStage(1, "loading workspace context");
     await this.emit({ type: "user_message", content: userGoal, ts: Date.now() });
+
 
     const messages: ModelMessage[] = [{ role: "user", content: userGoal }];
     let iterations = 0;
@@ -448,9 +471,20 @@ export class AgentLoop {
           const requestMessages: ModelMessage[] = feedback
             ? [...messages, { role: "user", content: feedback }]
             : messages;
-          feedback = null;
+                    feedback = null;
+
+          // NEXIPI stage: 2 = the model is deconstructing the prompt on the
+          // first pass; 5 = it is re-synthesizing a plan from the results of
+          // the previous iteration. Fires before each model turn so the
+          // indicator never shows idle while the model is producing.
+          if (iteration >= 1) {
+            this.notifyStage(5, "synthesizing plan from tool results");
+          } else {
+            this.notifyStage(2);
+          }
 
           const { response: res, streamed } = await this.runModelTurn(requestMessages);
+
 
           const { usage, costUsd } = o.meter.add(res.usage);
           await this.emit({ type: "usage_update", usage, costUsd, ts: Date.now() });
@@ -481,9 +515,13 @@ export class AgentLoop {
             });
           }
 
-          if (res.toolCalls.length === 0) {
+                    if (res.toolCalls.length === 0) {
             modelDone = true;
+            // The model returned a final, action-closed answer — the
+            // "anchoring" phase is about to finalize it.
+            this.notifyStage(7, "anchoring output");
             // Verification gate decides (R4): MUST pass before success.
+
             if (o.verification.enabled) {
               const outcome = await o.verification.run();
               verificationRounds += outcome.rounds;
@@ -650,9 +688,11 @@ export class AgentLoop {
     iteration: number,
   ): Promise<{ callId: string; content: string; isError?: boolean }> {
     const o = this.opts;
-    const decision = o.policy.decide(call);
+        const decision = o.policy.decide(call);
 
     if (!decision.allowed) {
+      // The approval gate is the moment "routing" happens; surface it.
+      this.notifyStage(4, `quantizing route — ${decision.reason ?? "gated"}`);
       const ask = await o.approval.request(call, {
         riskTier: decision.tier,
         reason: decision.reason,
@@ -683,6 +723,8 @@ export class AgentLoop {
       });
     }
 
+        const toolStage = nexipiToolStage(call);
+    if (toolStage) this.notifyStage(toolStage.stage, toolStage.detail);
     await this.emit({ type: "tool_started", call, ts: Date.now() });
 
     let content: string;

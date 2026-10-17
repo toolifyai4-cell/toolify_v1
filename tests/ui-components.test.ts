@@ -370,7 +370,9 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
 
   it("hides the landing prompt while running and shows the busy indicator", () => {
     const running = renderChat({ isRunning: true });
-    expect(running).not.toContain("What can I do for you?");
+        expect(running).not.toContain("What can I do for you?");
+    // The quadrant indicator animates while a run is in flight.
+    expect(running).toContain("[NEXIPI-CORE]");
 
     const idle = renderChat({ isRunning: false });
     expect(idle).toContain("What can I do for you?");
@@ -511,9 +513,9 @@ describe("ChatUI fills the terminal height", () => {
     expect(frame).toContain("I'm doing well");
     expect(frame).toContain("Can you write a function?");
 
-    // Thinking indicator must appear (at least once — deduplication of
-    // multiple thinking messages is covered by the renderToString test).
-    expect(frame).toContain("Thinking...");
+        // NEXIPI quadrant indicator must appear (at least once — deduplication
+    // of multiple thinking messages is covered by the renderToString test).
+    expect(frame).toContain("[NEXIPI-CORE]");
 
     // Input bar must be pinned near the bottom.
     const inputIndex = lines.findIndex((l) => l.includes("Type a message"));
@@ -571,9 +573,9 @@ describe("ChatUI fills the terminal height", () => {
       { role: "assistant", content: "...", thinking: true },
       { role: "assistant", content: "final", thinking: true },
     ];
-    const out = renderChat({ isRunning: true, messages });
-    const thinkingCount = (out.match(/Thinking\.\.\./g) || []).length;
-    expect(thinkingCount).toBe(1);
+        const out = renderChat({ isRunning: true, messages });
+    const pulseCount = (out.match(/\[NEXIPI-CORE\]/g) || []).length;
+    expect(pulseCount).toBe(1);
   });
 
   it("does NOT render the thinking spinner when settings or models overlay is active", () => {
@@ -594,7 +596,7 @@ describe("ChatUI fills the terminal height", () => {
       onSettingsSave: () => {},
       messages: [{ role: "user", content: "hi" }],
     });
-    expect(withSettings).not.toContain("Thinking...");
+        expect(withSettings).not.toContain("[NEXIPI-CORE]");
 
     const withModels = renderChat({
       isRunning: true,
@@ -602,6 +604,6 @@ describe("ChatUI fills the terminal height", () => {
       onModelsCommit: () => {},
       messages: [{ role: "user", content: "hi" }],
     });
-    expect(withModels).not.toContain("Thinking...");
+        expect(withModels).not.toContain("[NEXIPI-CORE]");
   });
 });

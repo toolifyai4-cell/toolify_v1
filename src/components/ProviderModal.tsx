@@ -3,6 +3,8 @@ import { Box, Text, useInput } from "ink";
 import type { SettingsProvider } from "./settings.js";
 import { readConfigSync } from "../utils/config.js";
 import { useTheme } from "../theme/ThemeContext.js";
+import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 
 export interface ProviderCatalogEntry {
   readonly id: SettingsProvider;
@@ -126,6 +128,22 @@ export const ProviderModal = (props: ProviderModalProps) => {
     }
     if (key.backspace || key.delete) {
       setQuery((q) => q.slice(0, -1));
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'v') {
+      setQuery((q) => q + readFromClipboard());
+      return;
+    }
+    if (key.ctrl && key.backspace) {
+      setQuery((q) => deleteWordLeft(q));
+      return;
+    }
+    if (key.ctrl && key.delete) {
+      setQuery((q) => deleteWordRight(q));
+      return;
+    }
+    if (key.ctrl && (key as { name?: string }).name === 'u') {
+      setQuery("");
       return;
     }
     if (typeof input === "string" && input.length > 0 && !key.ctrl && !key.meta) {

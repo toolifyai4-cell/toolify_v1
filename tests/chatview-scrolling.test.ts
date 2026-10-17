@@ -168,7 +168,7 @@ describe("ChatUI windowed transcript", () => {
     );
     expect(out).toContain("answer 2");
     expect(out).toContain("question 2");
-    expect(out).toContain("Thinking...");
+        expect(out).toContain("[NEXIPI-CORE]");
   });
 
   it("appends new completed messages to the window on rerender", async () => {
@@ -262,4 +262,66 @@ describe("ChatUI windowed transcript", () => {
     instance.unmount();
     await sleep(50);
   });
+
+  it("reveals older messages with ↑ and returns to the newest with ↓", async () => {
+    const messages = buildMessages(20); // 40 messages - far beyond the window
+    const { stream, writes } = makeStdout(24, 80);
+    const stdin = makeStdin();
+    const instance = render(
+      React.createElement(ChatUI, baseProps({ messages })),
+      { stdout: stream, stdin, exitOnCtrlC: false, interactive: true },
+    );
+    await sleep(150);
+
+    const initial = frameFrom(writes);
+    expect(initial).toContain("answer 19"); // newest visible at bottom
+    expect(initial).not.toContain("question 0"); // oldest clipped by the window
+    // Up arrow scrolls back one message at a time (clamped at length - 1).
+    stdin.push("\x1b[A".repeat(messages.length));
+    await sleep(300);
+    const scrolled = frameFrom(writes.slice(-6));
+    expect(scrolled).toContain("question 0"); // oldest now reachable
+    // Down arrow returns toward the newest.
+    stdin.push("\x1b[B".repeat(messages.length));
+    await sleep(300);
+    const returned = frameFrom(writes.slice(-3));
+    expect(returned).toContain("answer 19"); // newest restored
+    instance.unmount();
+    await sleep(50);
+  });
+
+  it("does not scroll the transcript while the slash command menu is open", async () => {
+    // Guards: ↑/↓ must navigate the command menu, not the transcript, while
+    // the menu is open. (Modal overlays replace the transcript, so the
+    // slash-menu case — transcript still visible above the menu — is the
+    // assertable form of the arrow-input gate.)
+    const messages = buildMessages(20);
+    const { stream, writes } = makeStdout(24, 80);
+    const stdin = makeStdin();
+    const instance = render(
+      React.createElement(ChatUI, baseProps({ messages })),
+      { stdout: stream, stdin, exitOnCtrlC: false, interactive: true },
+    );
+    await sleep(150);
+    // Open the slash menu — the transcript remains rendered above it.
+    stdin.push("/");
+    await sleep(250);
+
+    const withMenu = frameFrom(writes);
+    expect(withMenu).toContain("▼ 2 more"); // menu open (8 cmds vs page 6)
+    expect(withMenu).toContain("answer 19"); // transcript still painted
+    expect(withMenu).not.toContain("question 0"); // oldest still clipped
+
+    // Up arrow navigates the menu, not the transcript.
+    stdin.push("\x1b[A");
+    await sleep(250);
+
+    const afterUp = frameFrom(writes.slice(-4));
+    expect(afterUp).toContain("▼ 2 more"); // menu still open
+    expect(afterUp).toContain("answer 19"); // newest still visible (no scroll)
+    expect(afterUp).not.toContain("question 0"); // did NOT scroll to reveal it
+    instance.unmount();
+    await sleep(50);
+  });
+
 });
