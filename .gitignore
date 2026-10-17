@@ -8,6 +8,7 @@ dist/
 *.log
 .DS_Store
 .env
+.env example
 .tmp-smoke/
 *-out.txt
 _*.cjs
@@ -20,5 +21,3 @@ tests_after_impl.txt
 docs/*.bak
 
 
-.env
-.env example
