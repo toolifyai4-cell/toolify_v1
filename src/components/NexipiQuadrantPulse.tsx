@@ -57,14 +57,10 @@ export function NexipiQuadrantPulse({
   const stage: NexipiStage = activeStage && activeStage >= 1 ? activeStage : 2;
   const label = nexipiLabel(stage) ?? "Thinking...";
   const detail = currentDetailMessage || "";
-  const line = detail
-    ? `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label} ${detail}`
-    : `${nexipiGlyph(frame)} ${NEXIPI_CORE_TAG} ${label}`;
-
   return (
-    <Box width="100%" flexShrink={0}>
+    <Box width="100%" flexShrink={0} paddingX={1}>
       <Text color="white" wrap="truncate">
-        {line}
+        <Text bold color="white">{nexipiGlyph(frame)}   </Text>{`${NEXIPI_CORE_TAG} ${label}${detail ? ` ${detail}` : ""}`}
       </Text>
     </Box>
   );
