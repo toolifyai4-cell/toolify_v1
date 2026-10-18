@@ -15,7 +15,7 @@ export interface AuthUser {
   readonly accountName?: string;
 }
 
-/** One refreshable OAuth session, persisted to .toolify/auth.json. */
+/** One refreshable OAuth session, persisted to ~/.nexipi/auth.json. */
 export interface AuthSession {
   readonly provider: AuthProviderId;
   readonly accessToken: string;

@@ -1,6 +1,6 @@
 /**
  * Auth orchestrator — runs the full OAuth login flow for a given provider and
- * persists the resulting session to ~/.toolify/auth.json (global identity).
+  * persists the resulting session to ~/.nexipi/auth.json (global identity).
  */
 
 import { startCallbackServer, openAuthorizeUrl, type CallbackResult } from "./callback-server.js";
@@ -18,7 +18,7 @@ export interface AuthFlowCallbacks {
 
 /**
  * Run the OAuth login flow for `providerId`. The session is stored globally
- * (~/.toolify/auth.json) so it works in every project. `workspace` is only
+  * (~/.nexipi/auth.json) so it works in every project. `workspace` is only
  * used to pick up a legacy per-workspace session for one-time migration.
  */
 export async function runAuthFlow(
@@ -88,7 +88,7 @@ export async function runAuthFlow(
   return session;
 }
 
-/** Log out: remove the global auth session (~/.toolify/auth.json). */
+/** Log out: remove the global auth session (~/.nexipi/auth.json). */
 export function logout(_workspace?: string): boolean {
   return clearAuthSession();
 }

@@ -119,7 +119,7 @@ export async function saveConfig(workspace: string, cfg: ToolifyConfig): Promise
 
 /**
  * Entry gate: requires BOTH a valid global auth session (mandatory login,
- * stored at ~/.toolify/auth.json) and a complete per-project config.
+  * stored at ~/.nexipi/auth.json) and a complete per-project config.
  * Launches the full-screen Ink entry flow (splash or wizard) when needed.
  * Returns null when the user cancels the wizard.
  */
@@ -213,7 +213,7 @@ export function buildProgram(): Command {
 
   program
     .command("login")
-    .description("Sign in with Google or GitHub (global, stored at ~/.toolify/auth.json)")
+    .description("Sign in with Google or GitHub (global, stored at ~/.nexipi/auth.json)")
     .option("--provider <name>", "google or github", "google")
     .option("--workspace <dir>", "Workspace directory (only used for legacy session migration)", process.cwd())
     .action(async (opts) => {
@@ -233,7 +233,7 @@ export function buildProgram(): Command {
 
   program
     .command("logout")
-    .description("Sign out (removes the global session at ~/.toolify/auth.json)")
+    .description("Sign out (removes the global session at ~/.nexipi/auth.json)")
     .action(() => {
       if (logout()) {
         console.log(`Signed out. Global session removed.`);

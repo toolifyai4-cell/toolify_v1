@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Box, Text, useCursor, useInput, useStdout } from "ink";
+import { Box, Text, useCursor, useInput, usePaste, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 
 import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuHeight } from "./CommandMenu.js";
@@ -7,7 +7,7 @@ import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import { ThemeModal } from "./ThemeModal.js";
-import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { copyToClipboard } from "../utils/clipboard.js";
 import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 import type { ModelDescriptor } from "../models/model-registry.js";
 import type { SettingsDraft } from "./settings.js";
@@ -290,12 +290,8 @@ export const ChatUI = (props: ChatUIProps) => {
     }
     if (props.isRunning) return;
     // --- Terminal editing shortcuts ---
-    if (key.ctrl && key.shift && (key as { name?: string }).name === 'c') {
+    if (key.ctrl && key.shift && ch === 'c') {
       copyToClipboard(inputValue);
-      return;
-    }
-    if (key.ctrl && (key as { name?: string }).name === 'v') {
-      setInputValue((prev) => prev + readFromClipboard());
       return;
     }
     if (key.ctrl && key.backspace) {
@@ -316,19 +312,19 @@ export const ChatUI = (props: ChatUIProps) => {
       });
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'u') {
+    if (key.ctrl && ch === 'u') {
       setInputValue("");
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'a') {
+    if (key.ctrl && ch === 'a') {
       // Cursor-aware home not available in plain Ink input; no-op in v1
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'e') {
+    if (key.ctrl && ch === 'e') {
       // Cursor-aware end not available in plain Ink input; no-op in v1
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'k') {
+    if (key.ctrl && ch === 'k') {
       // Clear to end: no-op in v1 (cursor position unknown)
       return;
     }
@@ -359,6 +355,10 @@ export const ChatUI = (props: ChatUIProps) => {
       });
       return;
     }
+  });
+
+  usePaste((text) => {
+    setInputValue((prev) => prev + text);
   });
 
     const isChatView = !modelsActive && !settingsActive;

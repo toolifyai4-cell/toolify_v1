@@ -206,6 +206,29 @@ export async function startEntryFlow(
     return { config: existing, userName: session.user.name };
   }
 
+  // Already logged in but no workspace config yet → skip auth, provision
+  // a default config so the user lands straight in the chat viewport
+  // instead of seeing the "Sign in to continue" screen again.
+  if (authed && !cfgOk) {
+    const { saveConfig } = await import("./run.js");
+    const cfg: ToolifyConfig = {
+      provider: "openai",
+      model: "gpt-4o",
+      baseUrl: "https://api.openai.com/v1",
+    };
+    await saveConfig(workspace, cfg);
+    await new Promise<void>((resolve) => {
+      const instance = render(
+        <Splash
+          userName={session.user.name}
+          onDone={() => { endStep(instance); resolve(); }}
+        />,
+        FULLSCREEN_RENDER_OPTIONS,
+      );
+    });
+    return { config: cfg, userName: session.user.name };
+  }
+
   // Step 1: Welcome screen
   await new Promise<void>((resolve) => {
     const instance = render(

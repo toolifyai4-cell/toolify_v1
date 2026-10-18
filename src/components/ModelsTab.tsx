@@ -1,11 +1,11 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, usePaste } from "ink";
 import TextInput from "ink-text-input";
 import type { ModelDescriptor } from "../models/model-registry.js";
 import { getQuota } from "../models/quota-tracker.js";
 import { useTheme } from "../theme/ThemeContext.js";
 import { formatTokenCount } from "./ChatUI.js";
-import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { copyToClipboard } from "../utils/clipboard.js";
 import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 
 /** Check if any models in the list are fallback (cached/offline) data. */
@@ -119,10 +119,6 @@ export const ModelsTab = (props: ModelsTabProps) => {
       if (picked) props.onCommit(picked.id, picked.providerId);
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'v') {
-      setQuery((prev) => prev + readFromClipboard());
-      return;
-    }
     if (key.ctrl && key.backspace) {
       setQuery((prev) => deleteWordLeft(prev));
       return;
@@ -131,11 +127,15 @@ export const ModelsTab = (props: ModelsTabProps) => {
       setQuery((prev) => deleteWordRight(prev));
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'u') {
+    if (key.ctrl && input === 'u') {
       setQuery("");
       return;
     }
   }, { isActive: props.isActive ?? true });
+
+  usePaste((text) => {
+    setQuery((prev) => prev + text);
+  });
 
   React.useEffect(() => {
     if (index < scrollOffset) setScrollOffset(index);

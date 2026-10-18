@@ -6,11 +6,11 @@
  *                  session event log (`events.jsonl`) with a live token-context
  *                  estimate as the fallback when nothing has compacted yet.
  *  2. Graphify  -- node count produced by scanning the workspace source tree.
- *  3. Agent Skills -- installed skills discovered under `~/.toolify/skills/`,
+  *  3. Agent Skills -- installed skills discovered under `~/.nexipi/skills/`,
  *                     grouped into Core / System / Specialized domains with
  *                     per-skill toggle state persisted under `plugins.skills`.
- *
- * Also owns the global plugin persistence path: `~/.toolify/config.json`
+  *
+ * Also owns the global plugin persistence path: `~/.nexipi/config.json`
  * under the `plugins` key, written with 0600 permissions.
  */
 
@@ -118,7 +118,7 @@ export interface CollectPluginStatsInput {
   readonly sessionDir?: string | null;
   /** Live meter totals (Ponytail fallback when no compaction is logged). */
   readonly usage?: TokenUsageLike;
-  /** Override `~/.toolify` (tests). */
+    /** Override `~/.nexipi` (tests). */
   readonly toolifyHome?: string;
 }
 
@@ -414,10 +414,10 @@ export function collectPluginStats(
 }
 
 // ---------------------------------------------------------------------------
-// Global persistence: ~/.toolify/config.json -> { plugins: {...} }
+// Global persistence: ~/.nexipi/config.json -> { plugins: {...} }
 // ---------------------------------------------------------------------------
 
-/** Resolve the global config path (`~/.toolify/config.json`). */
+/** Resolve the global config path (`~/.nexipi/config.json`). */
 export function globalConfigPath(toolifyHome?: string): string {
   return join(toolifyHome ?? globalDir(), GLOBAL_CONFIG_FILENAME);
 }
@@ -435,7 +435,7 @@ export function loadGlobalPlugins(toolifyHome?: string): PluginSettings {
 }
 
 /**
- * Persist plugin state to `~/.toolify/config.json` under the `plugins` key,
+  * Persist plugin state to `~/.nexipi/config.json` under the `plugins` key,
  * preserving any other keys already in that file. Always written 0600.
  * Returns the path written.
  */

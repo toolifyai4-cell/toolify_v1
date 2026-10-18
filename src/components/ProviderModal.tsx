@@ -1,9 +1,9 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, usePaste } from "ink";
 import type { SettingsProvider } from "./settings.js";
 import { readConfigSync } from "../utils/config.js";
 import { useTheme } from "../theme/ThemeContext.js";
-import { copyToClipboard, readFromClipboard } from "../utils/clipboard.js";
+import { copyToClipboard } from "../utils/clipboard.js";
 import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 
 export interface ProviderCatalogEntry {
@@ -130,10 +130,6 @@ export const ProviderModal = (props: ProviderModalProps) => {
       setQuery((q) => q.slice(0, -1));
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'v') {
-      setQuery((q) => q + readFromClipboard());
-      return;
-    }
     if (key.ctrl && key.backspace) {
       setQuery((q) => deleteWordLeft(q));
       return;
@@ -142,7 +138,7 @@ export const ProviderModal = (props: ProviderModalProps) => {
       setQuery((q) => deleteWordRight(q));
       return;
     }
-    if (key.ctrl && (key as { name?: string }).name === 'u') {
+    if (key.ctrl && input === 'u') {
       setQuery("");
       return;
     }
@@ -150,6 +146,10 @@ export const ProviderModal = (props: ProviderModalProps) => {
       setQuery((q) => q + input);
       return;
     }
+  });
+
+  usePaste((text) => {
+    setQuery((q) => q + text);
   });
 
   const visible = filtered.slice(scrollOffset, scrollOffset + 5);

@@ -19,7 +19,7 @@ import type { NexipiStage } from "../agent/nexipi-stages.js";
 import { buildSessionSummary } from "./session-summary.js";
 import { ThemeProvider } from "../theme/ThemeContext.js";
 import { MenuScreen } from "../components/MenuScreen.js";
-import { loadAuthSession } from "../auth/index.js";
+import { loadAuthSession, logout } from "../auth/index.js";
 import type { AuthUser } from "../auth/types.js";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -158,7 +158,7 @@ export function ChatHost({
       theme: liveCfg.theme,
       autoApprove,
       autoUpdate: liveCfg.autoUpdate,
-      // Plugin state is global (~/.toolify/config.json), not per-workspace.
+            // Plugin state is global (~/.nexipi/config.json), not per-workspace.
       plugins: loadGlobalPlugins(),
     }),
     [liveCfg.provider, liveCfg.model, liveCfg.theme, liveCfg.autoUpdate, mode, autoApprove],
@@ -246,10 +246,26 @@ export function ChatHost({
         const cmd = input.trim().toLowerCase();
         if (cmd === "/clear") setMessages([]);
         else if (cmd === "/quit" || cmd === "/exit") { exitWithSummary(); return; }
+        else if (cmd === "/logout") {
+          const cleared = logout();
+          if (cleared) {
+            mutateMessages((prev) => [...prev, {
+              role: "assistant",
+              content: "Signed out — credentials cleared from ~/.nexipi/auth.json. Restart NEXIPI to sign in with a different account.",
+            }]);
+          } else {
+            mutateMessages((prev) => [...prev, {
+              role: "assistant",
+              content: "You were not signed in — nothing to clear.",
+            }]);
+          }
+          exitWithSummary();
+          return;
+        }
         else if (cmd === "/help") {
           mutateMessages((prev) => [...prev, {
             role: "assistant",
-            content: ["/settings - Modify agent configuration", "/model - Switch model or provider", "/theme - Change color theme", "/account - View Toolify account", "/history - Recent conversation turns", "/help - Show available commands", "/usage - View token consumption and cost", "/quit - Exit TOOLIFY application"].join("\n"),
+            content: ["/settings - Modify agent configuration", "/model - Switch model or provider", "/theme - Change color theme", "/account - View Toolify account", "/history - Recent conversation turns", "/logout - Sign out and clear saved credentials", "/help - Show available commands", "/usage - View token consumption and cost", "/quit - Exit TOOLIFY application"].join("\n"),
           }]);
         }
         else if (cmd === "/usage") {

@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "model": "xingchen-agi/xing4.0-29b-a4b:free",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
   "baseUrl": "https://api.openai.com/v1",
   "theme": "toolify-dark",
   "autoUpdate": true
