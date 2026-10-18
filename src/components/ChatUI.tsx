@@ -537,22 +537,23 @@ export const ChatUI = (props: ChatUIProps) => {
             <Box flexDirection="column" alignItems="flex-end" flexShrink={0} paddingLeft={2}>
               <Text wrap="truncate">
                 {props.mode === "plan" ? (
-                  <Text color="yellowBright">Plan [ON]</Text>
+                  <>
+                    <Text color="yellow">Plan</Text>
+                    <Text dimColor> • </Text>
+                    <Text dimColor>Build</Text>
+                  </>
                 ) : (
-                  <Text dimColor>Plan [OFF]</Text>
-                )}
-                {props.mode === "act" ? (
-                  <Text color="greenBright"> | Build [ON]</Text>
-                ) : (
-                  <Text dimColor> | Build [OFF]</Text>
+                  <>
+                    <Text dimColor>Plan</Text>
+                    <Text dimColor> • </Text>
+                    <Text color="cyan">Build</Text>
+                  </>
                 )}
                 <Text dimColor> (Tab)</Text>
               </Text>
               <Text wrap="truncate">
-                {props.autoApprove === "all" ? (
-                  <Text color="yellow">Auto-approve ALL <Text dimColor>(Shift+Tab)</Text></Text>
-                ) : props.autoApprove === "writes" ? (
-                  <Text color="yellow">Auto-approve writes <Text dimColor>(Shift+Tab)</Text></Text>
+                {props.autoApprove !== "off" ? (
+                  <Text color="yellow">Auto-approve on <Text dimColor>(Shift+Tab)</Text></Text>
                 ) : (
                   <Text dimColor>Auto-approve off (Shift+Tab)</Text>
                 )}

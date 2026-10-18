@@ -294,15 +294,22 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
     expect(out).toContain("C:\\tmp\\toolify-fresh");
   });
 
-  it("renders the mode indicator with the active mode highlighted", () => {
+    it("renders the mode indicator with the active mode highlighted", () => {
     const act = renderChat(); // default mode is "act", displayed as "Build"
-    expect(act).toContain("Plan [OFF]");
-    expect(act).toContain("| Build [ON]");
+    expect(act).toContain("Plan");
+    expect(act).toContain("Build");
+    expect(act).toContain("•");
     expect(act).toContain("(Tab)");
+    // No BALL_ACTIVE (●) in mode indicator — color highlights the active mode
+    expect(act).not.toContain("●");
 
     const plan = renderChat({ mode: "plan" });
-    expect(plan).toContain("Plan [ON]");
-    expect(plan).toContain("| Build [OFF]");
+    expect(plan).toContain("Plan");
+    expect(plan).toContain("Build");
+    expect(plan).toContain("•");
+    expect(plan).toContain("(Tab)");
+    // No BALL_ACTIVE (●) in mode indicator — color highlights the active mode
+    expect(plan).not.toContain("●");
   });
 
   it("uses real ball glyphs, not escaped text (regression guard)", () => {
@@ -319,7 +326,8 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
       const out = renderChat({ mode });
       expect(out).not.toContain("[PLAN]");
       expect(out).not.toContain("[ACT]");
-      expect(out).not.toContain("[BUILD]");
+      expect(out).not.toContain("[ON]");
+      expect(out).not.toContain("[OFF]");
     }
   });
 
@@ -327,8 +335,8 @@ describe("ChatUI renders (regression: unterminated JSX comment)", () => {
     const off = renderChat();
     expect(off).toContain("Auto-approve off");
     expect(off).toContain("(Shift+Tab)");
-    expect(renderChat({ autoApprove: "writes" })).toContain("Auto-approve writes");
-    expect(renderChat({ autoApprove: "all" })).toContain("Auto-approve ALL");
+    expect(renderChat({ autoApprove: "writes" })).toContain("Auto-approve on");
+    expect(renderChat({ autoApprove: "all" })).toContain("Auto-approve on");
   });
 
   it("renders user, assistant, tool call and tool result content", () => {
