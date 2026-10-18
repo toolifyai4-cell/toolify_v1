@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Box, Text, useCursor, useInput, usePaste, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 
@@ -139,17 +139,17 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
   return (
     <>
       {m.role === "user" ? (
-        <Box flexDirection="column">
-          <Text>
+        <Box flexDirection="column" width="100%">
+          <Text wrap="wrap">
             <Text backgroundColor="blue" color="black" bold> YOU </Text>
           </Text>
           <MarkdownText content={m.content} />
         </Box>
       ) : isErrorBanner(m.content) ? (
-        <Text color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
+        <Text wrap="wrap" color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
       ) : (
-        <Box flexDirection="column">
-          <Text>
+        <Box flexDirection="column" width="100%">
+          <Text wrap="wrap">
             {m.content && (
               <Text backgroundColor="magenta" color="black" bold>
                 {" "}NEXIPI{" "}
@@ -161,22 +161,26 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
       )}
 
       {m.toolCalls && m.toolCalls.length > 0 && (
-        <Box borderStyle="round" borderColor="gray" paddingX={1} marginLeft={1} marginY={1} flexDirection="column">
+        <Box borderStyle="round" borderColor="gray" paddingX={1} marginLeft={1} marginY={1} flexDirection="column" width="100%">
+          <Box width="100%">
           {m.toolCalls.map((tc) => (
-            <Text key={tc.id} dimColor>
+            <Text key={tc.id} dimColor wrap="wrap">
               {"[TOOL] "}{tc.name} {" "}{JSON.stringify(tc.input).slice(0, 120)}
             </Text>
           ))}
+          </Box>
         </Box>
       )}
 
       {m.toolResults && m.toolResults.length > 0 && (
-        <Box borderStyle="round" borderColor="gray" paddingX={1} marginLeft={1} marginY={1} flexDirection="column">
+        <Box borderStyle="round" borderColor="gray" paddingX={1} marginLeft={1} marginY={1} flexDirection="column" width="100%">
+          <Box width="100%">
           {m.toolResults.map((r) => (
-            <Text key={r.callId} color={r.isError ? "red" : "blueBright"}>
+            <Text key={r.callId} color={r.isError ? "red" : "blueBright"} wrap="wrap">
               {r.isError ? "[error]" : "[result]"} {r.content.slice(0, 200)}
             </Text>
           ))}
+          </Box>
         </Box>
       )}
     </>
@@ -186,6 +190,7 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
 export const ChatUI = (props: ChatUIProps) => {
   useCursor();
   const { stdout } = useStdout();
+  
 
   useEffect(() => {
     stdout.write("\x1b[?25l");
@@ -221,6 +226,59 @@ export const ChatUI = (props: ChatUIProps) => {
     if (props.messages.length === 0 && scrollBack !== 0) setScrollBack(0);
   }, [props.messages.length, scrollBack]);
 
+  // Auto-scroll to bottom when the agent starts generating or new messages arrive.
+  const prevIsRunningRef = useRef(props.isRunning);
+  useEffect(() => {
+    if (props.isRunning && !prevIsRunningRef.current) {
+      setScrollBack(0);
+    }
+    prevIsRunningRef.current = props.isRunning;
+  }, [props.isRunning]);
+
+  const prevMsgCountRef = useRef(props.messages.length);
+  useEffect(() => {
+    if (props.messages.length !== prevMsgCountRef.current) {
+      prevMsgCountRef.current = props.messages.length;
+      setScrollBack(0);
+    }
+  }, [props.messages.length]);
+
+    // Mouse / touchpad wheel scrolling via ANSI mouse tracking sequences.
+  useEffect(() => {
+    if (!process.stdin.isTTY) return;
+
+    // Enable SGR mouse mode (1006) + normal mouse reporting (1000).
+    process.stdout.write("\x1b[?1000h\x1b[?1006h");
+
+    const handleData = (data: Buffer) => {
+      const str = data.toString("utf8");
+      // SGR mouse mode wheel events.
+      // Wheel up: button code 4 (or 64 with shift modifier)
+      if (str.includes("\x1b[<4;") || str.includes("\x1b[<64;")) {
+        setScrollBack((s) => Math.min(s + 1, Math.max(0, props.messages.length - 1)));
+      }
+      // Wheel down: button code 5 (or 65 with shift modifier)
+      if (str.includes("\x1b[<5;") || str.includes("\x1b[<65;")) {
+        setScrollBack((s) => Math.max(0, s - 1));
+      }
+      // X10 mouse mode wheel events.
+      // Wheel up: ESC[M\x03 (button byte 3 = 4-1)
+      if (str.includes("\x1b[M\x03")) {
+        setScrollBack((s) => Math.min(s + 1, Math.max(0, props.messages.length - 1)));
+      }
+      // Wheel down: ESC[M\x04 (button byte 4 = 5-1)
+      if (str.includes("\x1b[M\x04")) {
+        setScrollBack((s) => Math.max(0, s - 1));
+      }
+    };
+
+    process.stdin.on("data", handleData);
+    return () => {
+      process.stdin.off("data", handleData);
+      process.stdout.write("\x1b[?1000l\x1b[?1006l");
+    };
+  }, [props.messages.length]);
+
   const [blink, setBlink] = useState(true);
   useEffect(() => {
     const t = setInterval(() => setBlink((b) => !b), 500);
@@ -248,22 +306,8 @@ export const ChatUI = (props: ChatUIProps) => {
       setScrollBack((s) => Math.max(0, s - SCROLL_STEP));
       return;
     }
-    // Transcript scroll (1 message per press). Guarded by `!slashOpen` so the
-    // arrow keys keep navigating the floating command-menu when it is open,
-    // and skipped by the modal early-return above when settings/models/themes
-    // are active (those overlays replace the transcript). Handled before the
-    // `isRunning` guard so scrolling works while a response is streaming.
-    if (!slashOpen && key.upArrow) {
-      setScrollBack((current) =>
-        Math.min(current + 1, Math.max(0, props.messages.length - 1)),
-      );
-      return;
-    }
-    if (!slashOpen && key.downArrow) {
-      setScrollBack((current) => Math.max(0, current - 1));
-      return;
-    }
-
+    // PageUp / PageDown remain the sole direct keyboard scroll shortcuts.
+    // Arrow keys are left dedicated to prompt cursor movement / prompt history.
     if (key.tab && key.shift) { props.onAutoApproveToggle(); return; }
     if (key.tab && !slashOpen) { if (!props.isRunning) props.onModeToggle(); return; }
     if (key.escape) {
@@ -384,7 +428,7 @@ export const ChatUI = (props: ChatUIProps) => {
         Math.min(COMMAND_MENU_PAGE_SIZE, rows - panelReserve - 8),
   );
   const menuRows = menuOpen ? estimateMenuHeight(slashCommands.length, menuPageSize) : 0;
-    const availableHeight = Math.max(4, rows - panelReserve - menuRows);
+        const availableHeight = Math.max(1, rows - panelReserve - menuRows);
 
   /**
    * Windowed transcript: pick the newest messages that fit the fixed-height
@@ -445,19 +489,19 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : (
-        <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0}>
-          {props.messages.length === 0 && !props.isRunning && (
-            <Box paddingTop={1} paddingBottom={1}>
-              <Text>{CYAN}What can I do for you?{RESET}</Text>
+                <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0} overflow="hidden">
+                    {props.messages.length === 0 && !props.isRunning && (
+            <Box paddingTop={1} paddingBottom={1} width="100%">
+              <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>
             </Box>
           )}
           {scrollBack > 0 && (
-            <Box paddingX={1}>
-              <Text dimColor>▲ {scrollBack} earlier · PgDn to return</Text>
+            <Box paddingX={1} width="100%">
+              <Text dimColor wrap="wrap">▲ {scrollBack} earlier · PgDn to return</Text>
             </Box>
           )}
           {visibleMessages.map((m, idx) => (
-            <Box key={idx} flexDirection="column" paddingBottom={1}>
+                        <Box key={idx} flexDirection="column" paddingBottom={1} width="100%">
               {renderMessageContent(m)}
             </Box>
           ))}

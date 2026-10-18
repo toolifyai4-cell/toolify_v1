@@ -74,22 +74,22 @@ function renderTable(table: { headers: string[]; rows: string[][] }): React.Reac
       })
       .join("│");
     return isHeader ? (
-      <Text key={`hdr-${Math.random()}`} bold>
+      <Text wrap="wrap" key={`hdr-${Math.random()}`} bold>
         {"│"}{cells}{"│"}
       </Text>
     ) : (
-      <Text key={`row-${Math.random()}`}>
+      <Text wrap="wrap" key={`row-${Math.random()}`}>
         {"│"}{cells}{"│"}
       </Text>
     );
   };
 
   return [
-    <Text key="top">{topBorder}</Text>,
+    <Text wrap="wrap" key="top">{topBorder}</Text>,
     renderRow(table.headers, true),
-    <Text key="mid">{midBorder}</Text>,
+    <Text wrap="wrap" key="mid">{midBorder}</Text>,
     ...table.rows.map((row) => renderRow(row, false)),
-    <Text key="bot">{botBorder}</Text>,
+    <Text wrap="wrap" key="bot">{botBorder}</Text>,
   ];
 }
 
@@ -107,7 +107,7 @@ export function renderInline(text: string): React.ReactNode[] {
       const end = text.indexOf("`", i + 1);
       if (end > i) {
         nodes.push(
-          <Text key={`code-${key++}`} color="cyan">
+          <Text wrap="wrap" key={`code-${key++}`} color="cyan">
             {text.slice(i + 1, end)}
           </Text>,
         );
@@ -122,7 +122,7 @@ export function renderInline(text: string): React.ReactNode[] {
       if (end > i + 2) {
         const inner = text.slice(i + 2, end);
                 nodes.push(
-          <Text key={`bold-${key++}`} bold color="green">
+          <Text wrap="wrap" key={`bold-${key++}`} bold color="green">
             {renderInline(inner)}
           </Text>,
         );
@@ -137,7 +137,7 @@ export function renderInline(text: string): React.ReactNode[] {
       if (end > i + 1) {
         const inner = text.slice(i + 1, end);
         nodes.push(
-          <Text key={`italic-${key++}`} dimColor>
+          <Text wrap="wrap" key={`italic-${key++}`} dimColor>
             {renderInline(inner)}
           </Text>,
         );
@@ -152,7 +152,7 @@ export function renderInline(text: string): React.ReactNode[] {
       if (end > i + 1) {
         const inner = text.slice(i + 1, end);
         nodes.push(
-          <Text key={`underscore-${key++}`} dimColor>
+          <Text wrap="wrap" key={`underscore-${key++}`} dimColor>
             {renderInline(inner)}
           </Text>,
         );
@@ -172,10 +172,10 @@ export function renderInline(text: string): React.ReactNode[] {
     );
     const end = nextSpecial === Infinity ? text.length : nextSpecial;
     if (end === i) {
-      nodes.push(<Text key={`char-${key++}`}>{text[i] || ""}</Text>);
+      nodes.push(<Text wrap="wrap" key={`char-${key++}`}>{text[i] || ""}</Text>);
       i += 1;
     } else {
-      nodes.push(<Text key={`text-${key++}`}>{text.slice(i, end)}</Text>);
+      nodes.push(<Text wrap="wrap" key={`text-${key++}`}>{text.slice(i, end)}</Text>);
       i = end;
     }
   }
@@ -233,17 +233,17 @@ export function MarkdownText({ content }: MarkdownTextProps): React.ReactElement
   const lines = content.split("\n");
   const blocks = groupLines(lines);
 
-    return (
-    <Box flexDirection="column">
+  return (
+    <Box flexDirection="column" width="100%">
       {blocks.map((block, idx) => (
         block.type === "table" && block.table ? (
-          <Box key={idx} flexDirection="column">
+          <Box key={idx} flexDirection="column" width="100%">
             {renderTable(block.table)}
           </Box>
         ) : (
-          <Text key={idx} dimColor={block.type === "list"}>
+          <Text key={idx} dimColor={block.type === "list"} wrap="wrap">
             {block.type === "header" ? (
-              <Text bold color="yellow">
+              <Text bold color="yellow" wrap="wrap">
                 {renderInline(block.text)}
               </Text>
             ) : block.type === "list" ? (

@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "model": "anthropic/claude-3.5-sonnet",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
   "baseUrl": "https://api.openai.com/v1",
   "theme": "toolify-dark",
   "autoUpdate": true

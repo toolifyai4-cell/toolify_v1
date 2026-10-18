@@ -263,7 +263,7 @@ describe("ChatUI windowed transcript", () => {
     await sleep(50);
   });
 
-  it("reveals older messages with ↑ and returns to the newest with ↓", async () => {
+    it("reveals older messages with PgUp and returns to the newest with PgDn", async () => {
     const messages = buildMessages(20); // 40 messages - far beyond the window
     const { stream, writes } = makeStdout(24, 80);
     const stdin = makeStdin();
@@ -276,13 +276,13 @@ describe("ChatUI windowed transcript", () => {
     const initial = frameFrom(writes);
     expect(initial).toContain("answer 19"); // newest visible at bottom
     expect(initial).not.toContain("question 0"); // oldest clipped by the window
-    // Up arrow scrolls back one message at a time (clamped at length - 1).
-    stdin.push("\x1b[A".repeat(messages.length));
+    // PgUp scrolls back by SCROLL_STEP (3) per press, clamped at length - 1.
+    stdin.push("\x1b[5~".repeat(13));
     await sleep(300);
     const scrolled = frameFrom(writes.slice(-6));
     expect(scrolled).toContain("question 0"); // oldest now reachable
-    // Down arrow returns toward the newest.
-    stdin.push("\x1b[B".repeat(messages.length));
+    // PgDn returns toward the newest.
+    stdin.push("\x1b[6~".repeat(13));
     await sleep(300);
     const returned = frameFrom(writes.slice(-3));
     expect(returned).toContain("answer 19"); // newest restored
@@ -292,9 +292,8 @@ describe("ChatUI windowed transcript", () => {
 
   it("does not scroll the transcript while the slash command menu is open", async () => {
     // Guards: ↑/↓ must navigate the command menu, not the transcript, while
-    // the menu is open. (Modal overlays replace the transcript, so the
-    // slash-menu case — transcript still visible above the menu — is the
-    // assertable form of the arrow-input gate.)
+    // the menu is open. Arrow keys are dedicated to cursor movement / history
+    // / menu navigation — NOT transcript scrolling (PgUp/PgDn scrolls).
     const messages = buildMessages(20);
     const { stream, writes } = makeStdout(24, 80);
     const stdin = makeStdin();
