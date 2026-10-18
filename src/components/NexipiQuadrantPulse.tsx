@@ -2,12 +2,14 @@ import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import { NEXIPI_IDLE, type NexipiStage, nexipiLabel } from "../agent/nexipi-stages.js";
 
-/** Quadrant glyph rotation sequence (U+25D0–U+25D3). */
-export const NEXIPI_GLYPHS = ["◐", "◓", "◑", "◒"] as const;
+/** High-tech Braille ring spinner sequence (10-frame Unicode Braille Patterns). */
+export const NEXIPI_GLYPHS = [
+  "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
+] as const;
 /** Milliseconds per glyph frame — a fast, smooth ~8fps spin. */
 export const NEXIPI_GLYPH_INTERVAL_MS = 120;
 
-/** Returns the glyph for the given animation frame, cycling every 4 ticks. */
+/** Returns the glyph for the given animation frame, cycling every 10 frames. */
 export function nexipiGlyph(frame: number): string {
   return NEXIPI_GLYPHS[frame % NEXIPI_GLYPHS.length];
 }
@@ -25,7 +27,7 @@ export interface NexipiQuadrantPulseProps {
 /**
  * Dynamic quadrant thinking indicator.
  *
- *   ◐ [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx
+ *   ⠋   [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx
  *
  * - The glyph rotates continuously at ~120ms while `isThinking` is true.
   * - The text line (stage + label + detail) reflects ONLY the
@@ -60,7 +62,7 @@ export function NexipiQuadrantPulse({
   return (
     <Box width="100%" flexShrink={0} paddingX={1}>
       <Text color="white" wrap="truncate">
-        <Text bold color="white">{nexipiGlyph(frame)}   </Text>{`${NEXIPI_CORE_TAG} ${label}${detail ? ` ${detail}` : ""}`}
+        <Text bold color="cyan">{nexipiGlyph(frame)}   </Text>{`${NEXIPI_CORE_TAG} ${label}${detail ? ` ${detail}` : ""}`}
       </Text>
     </Box>
   );

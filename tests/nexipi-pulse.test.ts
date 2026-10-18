@@ -10,7 +10,7 @@ import {
 import { NEXIPI_STAGES } from "../src/agent/nexipi-stages.js";
 
 describe("NexipiQuadrantPulse", () => {
-    it("renders the spec line: ◐   [NEXIPI-CORE] <label> <detail>", () => {
+    it("renders the spec line: ⠋   [NEXIPI-CORE] <label> <detail>", () => {
     const out = renderToString(
       React.createElement(NexipiQuadrantPulse, {
         isThinking: true,
@@ -19,11 +19,11 @@ describe("NexipiQuadrantPulse", () => {
       }),
       { columns: 80 },
     );
-    expect(out).toContain("◐"); // glyph starts on frame 0
+    expect(out).toContain("⠋"); // glyph starts on frame 0
     expect(out).toContain("[NEXIPI-CORE]");
     expect(out).toContain("Fluxing action...");
     expect(out).toContain("Writing src/components/Header.tsx");
-        expect(out).toContain("◐   [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx");
+        expect(out).toContain("⠋   [NEXIPI-CORE] Fluxing action... Writing src/components/Header.tsx");
   });
 
     it("renders every stage label with the spec line", () => {
@@ -32,7 +32,7 @@ describe("NexipiQuadrantPulse", () => {
         React.createElement(NexipiQuadrantPulse, { isThinking: true, activeStage: n }),
         { columns: 80 },
       );
-            expect(out).toContain(`◐   [NEXIPI-CORE] ${label}`);
+            expect(out).toContain(`⠋   [NEXIPI-CORE] ${label}`);
       expect(out).toContain(label);
       expect(out).toContain("[NEXIPI-CORE]");
     }
@@ -62,8 +62,8 @@ describe("NexipiQuadrantPulse", () => {
         expect(out).toContain("Deconstructing prompt...");
   });
 
-    it("cycles the quadrant glyph every 4 frames at a 120ms cadence (fake timers)", () => {
-    expect(NEXIPI_GLYPHS).toEqual(["◐", "◓", "◑", "◒"]);
+    it("cycles the Braille glyph every 10 frames at a 120ms cadence (fake timers)", () => {
+    expect(NEXIPI_GLYPHS).toEqual(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
     expect(NEXIPI_GLYPH_INTERVAL_MS).toBe(120);
 
     // Mirrors the component's setInterval-driven setFrame reducer so the
@@ -77,17 +77,29 @@ describe("NexipiQuadrantPulse", () => {
       },
       NEXIPI_GLYPH_INTERVAL_MS,
     );
-    expect(nexipiGlyph(frame)).toBe("◐"); // initial
+    expect(nexipiGlyph(frame)).toBe("⠋"); // initial
     vi.advanceTimersByTime(120);
-    expect(nexipiGlyph(frame)).toBe("◓");
+    expect(nexipiGlyph(frame)).toBe("⠙");
     vi.advanceTimersByTime(120);
-    expect(nexipiGlyph(frame)).toBe("◑");
+    expect(nexipiGlyph(frame)).toBe("⠹");
     vi.advanceTimersByTime(120);
-    expect(nexipiGlyph(frame)).toBe("◒");
+    expect(nexipiGlyph(frame)).toBe("⠸");
     vi.advanceTimersByTime(120);
-    expect(nexipiGlyph(frame)).toBe("◐"); // wraps back to frame 0
+    expect(nexipiGlyph(frame)).toBe("⠼");
     vi.advanceTimersByTime(120);
-    expect(nexipiGlyph(frame)).toBe("◓");
+    expect(nexipiGlyph(frame)).toBe("⠴");
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠦");
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠧");
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠇");
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠏");
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠋"); // wraps back to frame 0
+    vi.advanceTimersByTime(120);
+    expect(nexipiGlyph(frame)).toBe("⠙");
     clearInterval(id);
     vi.useRealTimers();
   });
