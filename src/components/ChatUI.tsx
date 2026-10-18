@@ -71,6 +71,16 @@ export interface ChatUIProps {
 }
 
 export const DIM = "\x1b[2m";
+
+// ANSI mouse tracking sequences (enabled on mount, disabled on unmount)
+export const ANSI_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
+export const ANTI_MOUSE_TRACKING = "\x1b[?1000l\x1b[?1006l";
+
+// Line buffering constants
+const MAX_LINES_PER_WINDOW = 40; // safety cap to prevent memory issues
+const AVAILABLE_HEIGHT = 10; // default available height for transcript
+
+export const BOTTOM_PANEL_HEIGHT = 7;
 export const CYAN = "\x1b[36m";
 export const GREEN = "\x1b[32m";
 export const YELLOW = "\x1b[33m";
