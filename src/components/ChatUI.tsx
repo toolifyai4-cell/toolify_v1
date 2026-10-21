@@ -3,7 +3,6 @@ import { Box, Text, useCursor, useInput, usePaste, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
 
 import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuHeight } from "./CommandMenu.js";
-import { MarkdownText } from "./MarkdownText.js";
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import { ThemeModal } from "./ThemeModal.js";
@@ -76,10 +75,6 @@ export const DIM = "\x1b[2m";
 export const ANSI_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
 export const ANTI_MOUSE_TRACKING = "\x1b[?1000l\x1b[?1006l";
 
-// Line buffering constants
-const MAX_LINES_PER_WINDOW = 40; // safety cap to prevent memory issues
-const AVAILABLE_HEIGHT = 10; // default available height for transcript
-
 export const BOTTOM_PANEL_HEIGHT = 7;
 export const CYAN = "\x1b[36m";
 export const GREEN = "\x1b[32m";
@@ -97,10 +92,14 @@ export const BALL_IDLE = "○";
  * input box (3) + status bar (3). The transcript window occupies
  * `rows - BOTTOM_PANEL_HEIGHT` rows above it.
  */
-export const BOTTOM_PANEL_HEIGHT = 7;
+//export const BOTTOM_PANEL_HEIGHT = 7;
+
 
 /** Messages scrolled per PgUp / PgDn press. */
 export const SCROLL_STEP = 3;
+
+/** Lines scrolled per touchpad / mouse-wheel tick. */
+export const WHEEL_STEP = 3;
 
 /**
  * Estimate the rendered height of one message, in terminal rows.
@@ -145,6 +144,45 @@ export function isErrorBanner(content: string): boolean {
   );
 }
 
+/**
+ * Convert one chat message into its visual wrapped lines (`string[]`),
+ * sized to `columns`. Every rendered chat message, markdown block, and tool
+ * result becomes one or more plain text lines so the transcript can be
+ * sliced line-by-line without squishing or clipping.
+ */
+function messageToLines(m: ChatMessage, columns: number): string[] {
+  const width = Math.max(10, columns - 4);
+  const lines: string[] = [];
+  const pushWrapped = (text: string): void => {
+    if (!text) return;
+    for (const chunk of text.split("\n")) {
+      if (chunk.length === 0) {
+        lines.push("");
+        continue;
+      }
+      for (let i = 0; i < chunk.length; i += width) {
+        lines.push(chunk.slice(i, i + width));
+      }
+    }
+  };
+  if (m.role === "user") {
+    lines.push("YOU");
+    pushWrapped(m.content);
+  } else if (isErrorBanner(m.content)) {
+    pushWrapped(m.content);
+  } else {
+    if (m.content) lines.push("NEXIPI");
+    pushWrapped(m.content);
+  }
+  for (const tc of m.toolCalls ?? []) {
+    lines.push(`[TOOL] ${tc.name} ${JSON.stringify(tc.input).slice(0, 120)}`);
+  }
+  for (const r of m.toolResults ?? []) {
+    lines.push(`${r.isError ? "[error]" : "[result]"} ${r.content.slice(0, 200)}`);
+  }
+  return lines;
+}
+
 function renderMessageContent(m: ChatMessage): React.ReactNode {
   return (
     <>
@@ -153,7 +191,7 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
           <Text wrap="wrap">
             <Text backgroundColor="blue" color="black" bold> YOU </Text>
           </Text>
-          <MarkdownText content={m.content} />
+          <Text wrap="wrap">{m.content}</Text>
         </Box>
       ) : isErrorBanner(m.content) ? (
         <Text wrap="wrap" color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
@@ -166,7 +204,7 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
               </Text>
             )}
           </Text>
-          {m.content ? <MarkdownText content={m.content} /> : null}
+          {m.content ? <Text wrap="wrap">{m.content}</Text> : null}
         </Box>
       )}
 
@@ -258,36 +296,37 @@ export const ChatUI = (props: ChatUIProps) => {
     if (!process.stdin.isTTY) return;
 
     // Enable SGR mouse mode (1006) + normal mouse reporting (1000).
-    process.stdout.write("\x1b[?1000h\x1b[?1006h");
+    process.stdout.write(ANSI_MOUSE_TRACKING);
 
     const handleData = (data: Buffer) => {
       const str = data.toString("utf8");
       // SGR mouse mode wheel events.
       // Wheel up: button code 4 (or 64 with shift modifier)
       if (str.includes("\x1b[<4;") || str.includes("\x1b[<64;")) {
-        setScrollBack((s) => Math.min(s + 1, Math.max(0, props.messages.length - 1)));
+        setScrollBack((s) => Math.min(s + WHEEL_STEP, maxScrollBackRef.current));
       }
       // Wheel down: button code 5 (or 65 with shift modifier)
       if (str.includes("\x1b[<5;") || str.includes("\x1b[<65;")) {
-        setScrollBack((s) => Math.max(0, s - 1));
+        setScrollBack((s) => Math.max(0, s - WHEEL_STEP));
       }
       // X10 mouse mode wheel events.
       // Wheel up: ESC[M\x03 (button byte 3 = 4-1)
       if (str.includes("\x1b[M\x03")) {
-        setScrollBack((s) => Math.min(s + 1, Math.max(0, props.messages.length - 1)));
+        setScrollBack((s) => Math.min(s + WHEEL_STEP, maxScrollBackRef.current));
       }
       // Wheel down: ESC[M\x04 (button byte 4 = 5-1)
       if (str.includes("\x1b[M\x04")) {
-        setScrollBack((s) => Math.max(0, s - 1));
+        setScrollBack((s) => Math.max(0, s - WHEEL_STEP));
       }
     };
 
     process.stdin.on("data", handleData);
     return () => {
       process.stdin.off("data", handleData);
-      process.stdout.write("\x1b[?1000l\x1b[?1006l");
+      process.stdout.write(ANTI_MOUSE_TRACKING);
     };
-  }, [props.messages.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [blink, setBlink] = useState(true);
   useEffect(() => {
@@ -309,11 +348,11 @@ export const ChatUI = (props: ChatUIProps) => {
     // History scrolling works even while a response is streaming, so it is
     // handled BEFORE the isRunning guard below.
     if (key.pageUp) {
-      setScrollBack((s) => Math.min(s + SCROLL_STEP, Math.max(0, props.messages.length - 1)));
+      setScrollBack((s) => Math.min(s + availableHeight, maxScrollBack));
       return;
     }
     if (key.pageDown) {
-      setScrollBack((s) => Math.max(0, s - SCROLL_STEP));
+      setScrollBack((s) => Math.max(0, s - availableHeight));
       return;
     }
     // PageUp / PageDown remain the sole direct keyboard scroll shortcuts.
@@ -337,6 +376,7 @@ export const ChatUI = (props: ChatUIProps) => {
         setInputValue("");
         closeSlashMenu();
         props.onSubmit(picked.name);
+        setScrollBack(0);
         return;
       }
       closeSlashMenu();
@@ -384,7 +424,7 @@ export const ChatUI = (props: ChatUIProps) => {
     }
     if (key.return) {
       const v = inputValue.trim();
-      if (v) { setInputValue(""); props.onSubmit(v); }
+      if (v) { setInputValue(""); props.onSubmit(v); setScrollBack(0); }
       return;
     }
     if (key.delete || key.backspace) {
@@ -419,49 +459,60 @@ export const ChatUI = (props: ChatUIProps) => {
   const thinking = isChatView && Boolean(props.isThinking ?? props.isRunning);
   const activeStage: NexipiStage =
     props.activeStage && props.activeStage >= 1 ? props.activeStage : thinking ? 2 : NEXIPI_IDLE;
-  // The pulse adds one row to the pinned bottom panel while it is visible.
-  const panelReserve = BOTTOM_PANEL_HEIGHT + (thinking ? 1 : 0);
+  // The pulse renders inside the pinned bottom panel; it does not consume
+  // transcript rows, so panelReserve reflects ONLY the actual bottom panel
+  // rows (input box + status bar lines).
+  const panelReserve = BOTTOM_PANEL_HEIGHT;
 
   const columns =
     typeof stdout.columns === "number" && stdout.columns > 0 ? stdout.columns : 80;
 
-  // The slash menu lives in the bottom panel and can add up to ~10 rows
-  // (6 commands + 2 border + 1 footer + 1 margin). When it is open, its
-  // height is RESERVED from the transcript budget so the frame always
-  // totals exactly `rows`. Without this, the column overflows the
-  // fixed-height root and Yoga shrinks every child (all Boxes have
-  // flexShrink: 1 by default) — the menu box gets compressed and its rows
-  // paint at overlapping positions, corrupting the render.
-  const menuOpen = slashOpen && slashCommands.length > 0;
-  const menuPageSize = Math.max(
-    2,
-        Math.min(COMMAND_MENU_PAGE_SIZE, rows - panelReserve - 8),
-  );
-  const menuRows = menuOpen ? estimateMenuHeight(slashCommands.length, menuPageSize) : 0;
-        const availableHeight = Math.max(1, rows - panelReserve - menuRows);
+  // availableHeight reflects the full terminal height minus only the pinned
+  // bottom panel. The slash menu lives inside the bottom panel (flexShrink=0)
+  // and does not reduce the transcript budget — the transcript viewport
+  // stretches via flexGrow={1} to fill all remaining space.
+  const availableHeight = Math.max(1, rows - panelReserve);
 
   /**
-   * Windowed transcript: pick the newest messages that fit the fixed-height
-   * message area. The newest message is always included (it may be clipped
-   * at its top while streaming). `scrollBack` (PgUp/PgDn) slides the window
-   * toward older messages.
+   * Line-buffered transcript: convert every message into visual wrapped
+   * lines sized to `columns`, then slice the visible window based on
+   * `scrollBack` (lines scrolled back from bottom).
+   *
+   *   availableHeight = Math.max(1, stdout.rows - panelReserve)
+   *   visibleLines = allLines.slice(
+   *     Math.max(0, totalLines - availableHeight - scrollBack),
+   *     Math.max(availableHeight, totalLines - scrollBack)
+   *   )
+   *
+   * Rendering ONLY `visibleLines` into the viewport lets long output flow
+   * naturally without squishing into a single page or overlapping columns.
    */
-  const visibleMessages = useMemo(() => {
-    const all = props.messages;
-    const end = all.length - scrollBack;
-    if (end <= 0) return [] as ChatMessage[];
-    let budget = availableHeight - 2; // reserve rows for the "earlier" indicator
-    const picked: ChatMessage[] = [];
-    for (let i = end - 1; i >= 0; i--) {
-      const m = all[i]!;
-      const h = estimateMessageLines(m, columns);
-      if (picked.length > 0 && h > budget) break;
-      picked.unshift(m);
-      budget -= h;
-      if (budget <= 0) break;
+  const allLines = useMemo(() => {
+    let acc: string[] = [];
+    for (const m of props.messages) {
+      acc = acc.concat(messageToLines(m, columns));
     }
-    return picked;
-  }, [props.messages, scrollBack, availableHeight, columns]);
+    return acc;
+  }, [props.messages, columns]);
+
+  const totalLines = allLines.length;
+  const maxScrollBack = Math.max(0, totalLines - availableHeight);
+
+  // Clamp scrollBack whenever the window size or content changes.
+  useEffect(() => {
+    setScrollBack((s) => Math.min(s, maxScrollBack));
+  }, [maxScrollBack]);
+
+  const scrollBackRef = useRef(scrollBack);
+  scrollBackRef.current = scrollBack;
+  const maxScrollBackRef = useRef(maxScrollBack);
+  maxScrollBackRef.current = maxScrollBack;
+
+  const visibleLines = useMemo(() => {
+    const start = Math.max(0, totalLines - availableHeight - scrollBack);
+    const end = Math.max(availableHeight, totalLines - scrollBack);
+    return allLines.slice(start, end);
+  }, [allLines, totalLines, availableHeight, scrollBack]);
 
   return (
     <Box flexDirection="column" width="100%" height={rows}>
@@ -499,21 +550,16 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : (
-                <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0} overflow="hidden">
+        <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0}>
                     {props.messages.length === 0 && !props.isRunning && (
             <Box paddingTop={1} paddingBottom={1} width="100%">
               <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>
             </Box>
           )}
-          {scrollBack > 0 && (
-            <Box paddingX={1} width="100%">
-              <Text dimColor wrap="wrap">▲ {scrollBack} earlier · PgDn to return</Text>
-            </Box>
-          )}
-          {visibleMessages.map((m, idx) => (
-                        <Box key={idx} flexDirection="column" paddingBottom={1} width="100%">
-              {renderMessageContent(m)}
-            </Box>
+          {visibleLines.map((line, idx) => (
+            <Text key={idx} wrap="wrap">
+              {line}
+            </Text>
           ))}
         </Box>
       )}
