@@ -473,6 +473,12 @@ export const ChatUI = (props: ChatUIProps) => {
   // stretches via flexGrow={1} to fill all remaining space.
   const availableHeight = Math.max(1, rows - panelReserve);
 
+  // The slash menu lives inside the bottom panel (flexShrink=0). Its height
+  // is NOT reserved from the transcript budget; the transcript viewport
+  // stretches via flexGrow={1} and the menu renders within the bottom panel.
+  const menuOpen = slashOpen && slashCommands.length > 0;
+  const menuPageSize = Math.max(2, Math.min(COMMAND_MENU_PAGE_SIZE, rows - panelReserve - 8));
+
   /**
    * Line-buffered transcript: convert every message into visual wrapped
    * lines sized to `columns`, then slice the visible window based on
@@ -509,8 +515,15 @@ export const ChatUI = (props: ChatUIProps) => {
   maxScrollBackRef.current = maxScrollBack;
 
   const visibleLines = useMemo(() => {
+    if (scrollBack === 0) {
+      // Live view at the bottom: render everything that fits.
+      if (totalLines <= availableHeight) return allLines.slice(0);
+      return allLines.slice(totalLines - availableHeight);
+    }
+    // Scrolled up: render an `availableHeight`-high window starting `scrollBack`
+    // lines above the bottom of the transcript.
     const start = Math.max(0, totalLines - availableHeight - scrollBack);
-    const end = Math.max(availableHeight, totalLines - scrollBack);
+    const end = start + availableHeight;
     return allLines.slice(start, end);
   }, [allLines, totalLines, availableHeight, scrollBack]);
 
@@ -550,7 +563,7 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : (
-        <Box flexDirection="column" width="100%" height={availableHeight} flexShrink={0}>
+        <Box flexDirection="column" width="100%" height={availableHeight} flexGrow={1} justifyContent={scrollBack === 0 && props.messages.length > 0 ? "flex-end" : undefined}>
                     {props.messages.length === 0 && !props.isRunning && (
             <Box paddingTop={1} paddingBottom={1} width="100%">
               <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>
@@ -566,7 +579,8 @@ export const ChatUI = (props: ChatUIProps) => {
 
       {/* 2. BOTTOM PANEL — slash menu + input + status, pinned to the bottom.
           flexShrink={0} everywhere so Yoga never compresses these boxes;
-          the menu's height is already reserved from `availableHeight`. */}
+          the transcript viewport stretches via flexGrow={1} to fill all
+          remaining space above this panel. */}
       <Box flexDirection="column" width="100%" flexShrink={0}>
         {/* Floating Slash Command Menu */}
         {menuOpen && (
