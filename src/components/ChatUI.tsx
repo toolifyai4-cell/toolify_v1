@@ -312,8 +312,14 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
   if (m.role === "user") {
+    const contentLines = renderMarkdownToAnsi(m.content ?? "", width);
+    // Subtle full-width divider directly above each YOU turn so user prompts
+    // stand out clearly against previous agent output.
+    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
+    // YOU badge header line with blue background / white bold text.
     lines.push("\x1b[44;30;1m YOU \x1b[0m");
-    lines.push(...renderMarkdownToAnsi(m.content ?? "", width));
+    // User query content lines below the badge.
+    lines.push(...contentLines);
   } else if (isErrorBanner(m.content)) {
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else {
@@ -620,7 +626,7 @@ export const ChatUI = (props: ChatUIProps) => {
   // bottom panel. The slash menu lives inside the bottom panel (flexShrink=0)
   // and does not reduce the transcript budget — the transcript viewport
   // stretches via flexGrow={1} to fill all remaining space.
-  const availableHeight = Math.max(1, rows - panelReserve);
+  const availableHeight = Math.max(1, rows - BOTTOM_PANEL_HEIGHT);
 
   // The slash menu lives inside the bottom panel (flexShrink=0). Its height
   // is NOT reserved from the transcript budget; the transcript viewport
@@ -644,8 +650,14 @@ export const ChatUI = (props: ChatUIProps) => {
    */
   const allLines = useMemo(() => {
     let acc: string[] = [];
-    for (const m of props.messages) {
+    for (let i = 0; i < props.messages.length; i++) {
+      const m = props.messages[i];
       acc = acc.concat(messageToLines(m, columns));
+      // Single subtle full-width divider between User turn -> Assistant response only.
+      // Prevents double dividers and keeps line count accurate for viewport slicing.
+      if (m.role === "user" && i + 1 < props.messages.length && props.messages[i + 1].role === "assistant") {
+        acc.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
+      }
     }
     return acc;
   }, [props.messages, columns]);
@@ -665,19 +677,24 @@ export const ChatUI = (props: ChatUIProps) => {
 
     const visibleLines = useMemo(() => {
     if (scrollBack === 0) {
-      // Live view at the bottom: render everything that fits.
-      if (totalLines <= availableHeight) return allLines.slice(0);
+      // No messages: the landing prompt handles the empty state; don't pad.
+      if (totalLines === 0) return [];
+      // Short transcript: pad the top with empty lines so messages sit
+      // directly above the docked input panel, with no dead space at bottom.
+      if (totalLines < availableHeight) {
+        return [...Array(availableHeight - totalLines).fill(""), ...allLines];
+      }
+      // Full viewport: show the last `availableHeight` lines.
       return allLines.slice(totalLines - availableHeight);
     }
     // Scrolled up: render an `availableHeight`-high window starting `scrollBack`
     // lines above the bottom of the transcript.
     const start = Math.max(0, totalLines - availableHeight - scrollBack);
-    const end = start + availableHeight;
-    return allLines.slice(start, end);
+    return allLines.slice(start, start + availableHeight);
   }, [allLines, totalLines, availableHeight, scrollBack]);
 
   return (
-    <Box flexDirection="column" width="100%" height={rows}>
+    <Box flexDirection="column" height={rows} justifyContent="space-between" width="100%">
       {/* 1. TRANSCRIPT — bounded window INSIDE the frame. Messages are part
           of the dynamic output, so they stay visible across every repaint.
           (They used to live in Ink's <Static> above a fullscreen frame,
@@ -712,7 +729,7 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : (
-        <Box flexDirection="column" width={columns} height={availableHeight} justifyContent={scrollBack === 0 && props.messages.length > 0 ? "flex-end" : undefined}>
+        <Box flexDirection="column" width={columns} height={availableHeight} flexGrow={1}>
                     {props.messages.length === 0 && !props.isRunning && (
             <Box paddingTop={1} paddingBottom={1} width="100%">
               <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>

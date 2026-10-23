@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "model": "recursive/flint-v1.0:free",
+  "model": "minimax/minimax-m3.1-flash",
   "baseUrl": "https://api.openai.com/v1",
   "theme": "toolify-dark",
   "autoUpdate": true
