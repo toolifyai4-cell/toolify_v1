@@ -144,46 +144,195 @@ export function isErrorBanner(content: string): boolean {
   );
 }
 
+export function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+}
+
+function visibleLength(s: string): number {
+  return stripAnsi(s).length;
+}
+
+function wrapAnsi(text: string, width: number): string[] {
+  const w = Math.max(1, width);
+  const result: string[] = [];
+  for (const segment of text.split("\n")) {
+    if (segment === "") {
+      result.push("");
+      continue;
+    }
+    let current = "";
+    let visible = 0;
+    let active = "";
+    let i = 0;
+    const pushCurrent = (): void => {
+      if (active) current += RESET;
+      result.push(current);
+      current = active;
+      visible = 0;
+    };
+    while (i < segment.length) {
+      if (segment.charCodeAt(i) === 0x1b && segment[i + 1] === "[") {
+        const m = segment.slice(i).match(/^\x1b\[[0-9;?]*[A-Za-z]/);
+        if (m) {
+          const esc = m[0];
+          current += esc;
+          if (esc.endsWith("m")) {
+            if (esc === "\x1b[0m" || esc === "\x1b[m") {
+              active = "";
+            } else {
+              active += esc;
+            }
+          }
+          i += esc.length;
+          continue;
+        }
+      }
+      if (visible >= w) {
+        pushCurrent();
+      }
+      current += segment[i];
+      visible += 1;
+      i += 1;
+    }
+    if (active) current += RESET;
+    result.push(current);
+  }
+  return result;
+}
+
+function renderInlineAnsi(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "`") {
+      const end = text.indexOf("`", i + 1);
+      if (end > i) {
+        out += "\x1b[40;36m" + text.slice(i + 1, end) + RESET;
+        i = end + 1;
+        continue;
+      }
+    }
+    if (text.startsWith("**", i)) {
+      const end = text.indexOf("**", i + 2);
+      if (end > i + 1) {
+        out += "\x1b[1;37m" + renderInlineAnsi(text.slice(i + 2, end)) + RESET;
+        i = end + 2;
+        continue;
+      }
+    }
+    out += text[i];
+    i += 1;
+  }
+  return out;
+}
+
+function highlightCode(line: string): string {
+  let out = "";
+  let last = 0;
+  const re =
+    /(\/\/.*$|#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|import|export|from|default|class|extends|new|async|await|try|catch|finally|throw|typeof|instanceof|interface|type|enum|readonly|static|null|undefined|true|false|this|void|as|in|of)\b/g;
+  let m: RegExpExecArray | null;
+  re.lastIndex = 0;
+  while ((m = re.exec(line)) !== null) {
+    out += line.slice(last, m.index);
+    if (m[1] !== undefined) out += YELLOW + m[0] + RESET;
+    else if (m[2] !== undefined) out += GREEN + m[0] + RESET;
+    else out += CYAN + m[0] + RESET;
+    last = m.index + m[0].length;
+  }
+  return out + line.slice(last);
+}
+
+function renderMarkdownToAnsi(content: string, width: number): string[] {
+  const lines: string[] = [];
+  const srcLines = content.split("\n");
+  let inCode = false;
+  for (const raw of srcLines) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("```")) {
+      if (!inCode) {
+        inCode = true;
+        const lang = trimmed.slice(3).trim() || "text";
+        const innerWidth = Math.max(0, width - 4 - lang.length);
+        lines.push(DIM + "┌─ " + RESET + CYAN + "\x1b[1m" + lang + RESET + DIM + " " + "─".repeat(innerWidth) + "┐" + RESET);
+      } else {
+        inCode = false;
+        lines.push(DIM + "└" + "─".repeat(Math.max(0, width - 2)) + "┘" + RESET);
+      }
+      continue;
+    }
+    if (inCode) {
+      const highlighted = highlightCode(raw);
+      lines.push(...wrapAnsi(highlighted, width));
+      continue;
+    }
+    if (/^---+$/.test(trimmed)) {
+      lines.push(DIM + "─".repeat(width) + RESET);
+      continue;
+    }
+    const h = raw.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const level = h[1]!.length;
+      const color = level <= 2 ? "\x1b[1;93m" : "\x1b[1;96m";
+      lines.push(color + renderInlineAnsi(h[2]!) + RESET);
+      continue;
+    }
+    if (trimmed === "") {
+      lines.push("");
+      continue;
+    }
+    const ul = raw.match(/^(\s*)([-*])\s+(.*)$/);
+    if (ul) {
+      const indent = ul[1] ?? "";
+      lines.push(indent + "• " + renderInlineAnsi(ul[3] ?? ""));
+      continue;
+    }
+    const ol = raw.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (ol) {
+      const indent = ol[1] ?? "";
+      lines.push(indent + (ol[2] ?? "") + ". " + renderInlineAnsi(ol[3] ?? ""));
+      continue;
+    }
+    const formatted = renderInlineAnsi(raw);
+    lines.push(...wrapAnsi(formatted, width));
+  }
+  if (inCode) {
+    lines.push(DIM + "└" + "─".repeat(Math.max(0, width - 2)) + "┘" + RESET);
+  }
+  return lines;
+}
+
 /**
  * Convert one chat message into its visual wrapped lines (`string[]`),
  * sized to `columns`. Every rendered chat message, markdown block, and tool
  * result becomes one or more plain text lines so the transcript can be
  * sliced line-by-line without squishing or clipping.
  */
-function messageToLines(m: ChatMessage, columns: number): string[] {
+export function messageToLines(m: ChatMessage, columns: number): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
-  const pushWrapped = (text: string): void => {
-    if (!text) return;
-    for (const chunk of text.split("\n")) {
-      if (chunk.length === 0) {
-        lines.push("");
-        continue;
-      }
-      for (let i = 0; i < chunk.length; i += width) {
-        lines.push(chunk.slice(i, i + width));
-      }
-    }
-  };
   if (m.role === "user") {
-    lines.push("YOU");
-    pushWrapped(m.content);
+    lines.push("\x1b[44;30;1m YOU \x1b[0m");
+    lines.push(...renderMarkdownToAnsi(m.content ?? "", width));
   } else if (isErrorBanner(m.content)) {
-    pushWrapped(m.content);
+    lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else {
-    if (m.content) lines.push("NEXIPI");
-    pushWrapped(m.content);
-  }
-  for (const tc of m.toolCalls ?? []) {
-    lines.push(`[TOOL] ${tc.name} ${JSON.stringify(tc.input).slice(0, 120)}`);
-  }
-  for (const r of m.toolResults ?? []) {
-    lines.push(`${r.isError ? "[error]" : "[result]"} ${r.content.slice(0, 200)}`);
+    if (m.content) lines.push("\x1b[45;37;1m NEXIPI \x1b[0m");
+    if (m.content) lines.push(...renderMarkdownToAnsi(m.content, width));
+    for (const tc of m.toolCalls ?? []) {
+      const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, 120);
+      lines.push(...wrapAnsi(toolLine, width));
+    }
+    for (const r of m.toolResults ?? []) {
+      const badge = r.isError ? RED + "[error]" + RESET : BLUE_BRIGHT + "[result]" + RESET;
+      const resLine = badge + " " + r.content.slice(0, 200);
+      lines.push(...wrapAnsi(resLine, width));
+    }
   }
   return lines;
 }
 
-function renderMessageContent(m: ChatMessage): React.ReactNode {
+export function renderMessageContent(m: ChatMessage): React.ReactNode {
   return (
     <>
       {m.role === "user" ? (
@@ -191,7 +340,7 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
           <Text wrap="wrap">
             <Text backgroundColor="blue" color="black" bold> YOU </Text>
           </Text>
-          <Text wrap="wrap">{m.content}</Text>
+          <Text wrap="wrap">{renderMarkdownToAnsi(m.content ?? "", 80).join("\n")}</Text>
         </Box>
       ) : isErrorBanner(m.content) ? (
         <Text wrap="wrap" color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
@@ -204,7 +353,7 @@ function renderMessageContent(m: ChatMessage): React.ReactNode {
               </Text>
             )}
           </Text>
-          {m.content ? <Text wrap="wrap">{m.content}</Text> : null}
+          {m.content ? <Text wrap="wrap">{renderMarkdownToAnsi(m.content, 80).join("\n")}</Text> : null}
         </Box>
       )}
 
@@ -514,7 +663,7 @@ export const ChatUI = (props: ChatUIProps) => {
   const maxScrollBackRef = useRef(maxScrollBack);
   maxScrollBackRef.current = maxScrollBack;
 
-  const visibleLines = useMemo(() => {
+    const visibleLines = useMemo(() => {
     if (scrollBack === 0) {
       // Live view at the bottom: render everything that fits.
       if (totalLines <= availableHeight) return allLines.slice(0);
@@ -563,7 +712,7 @@ export const ChatUI = (props: ChatUIProps) => {
         />
         </Box>
       ) : (
-        <Box flexDirection="column" width="100%" height={availableHeight} flexGrow={1} justifyContent={scrollBack === 0 && props.messages.length > 0 ? "flex-end" : undefined}>
+        <Box flexDirection="column" width={columns} height={availableHeight} justifyContent={scrollBack === 0 && props.messages.length > 0 ? "flex-end" : undefined}>
                     {props.messages.length === 0 && !props.isRunning && (
             <Box paddingTop={1} paddingBottom={1} width="100%">
               <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>
