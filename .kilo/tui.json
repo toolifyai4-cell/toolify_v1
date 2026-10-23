@@ -1,0 +1,5 @@
+{
+  "plugin": [
+    "git:github.com/Kilo-Org/kilo-marketplace-test-plugin"
+  ]
+}

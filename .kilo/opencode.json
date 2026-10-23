@@ -1,0 +1,6 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "plugin": [
+    "git:github.com/Kilo-Org/kilo-marketplace-test-plugin"
+  ]
+}

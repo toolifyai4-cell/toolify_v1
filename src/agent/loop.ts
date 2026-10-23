@@ -36,7 +36,11 @@ import { createToolRegistryAdapter } from "../tools/tool-registry-adapter.js";
 // backward compatibility with existing importers.
 import { AgentTimeoutError, withTimeout } from "./timeouts.js";
 import { consumeProviderStream } from "./stream-consumer.js";
+import { classifyUserIntent } from "./types.js";
 export { AgentTimeoutError, withTimeout } from "./timeouts.js";
+
+// Intent type for tool usage boundaries
+export type IntentType = "GENERAL_KNOWLEDGE" | "WORKSPACE_TASK";
 
 /**
  * Exact footer appended to every Plan-mode blueprint. The runtime guarantees
@@ -343,6 +347,7 @@ export class AgentLoop {
   private aborted = false;
   private readonly opts: AgentRuntimeDeps;
   private readonly label: string;
+  private currentIntent: IntentType = "GENERAL_KNOWLEDGE";
 
   constructor(opts: AgentLoopOptions | AgentRuntimeDeps) {
     this.opts = isRuntimeDeps(opts) ? opts : resolveDeps(opts);
@@ -362,7 +367,7 @@ export class AgentLoop {
       "",
       "## Conversation First (human-like behavior)",
       "- If the user sends a greeting, small talk, thanks, or any casual conversational message that requires no tools (e.g. hi, hello, hey, how are you), answer directly with a short, friendly reply and ask how you can help.",
-      "- Do NOT call list_files, glob, grep, read_file, workspace scans, or any read-only tools for casual chatter unless the user explicitly asks for an action, references files or code, or the task genuinely requires it.",
+      "- Do NOT call list_files, glob, grep, read_file, workspace scans, or any read-only workspace tools unless the user explicitly requests local codebase information.",
       "",
       "1. ALWAYS provide a direct text answer to the user's question directly in the chat stream.",
       "2. ALWAYS provide a clear, concise final summary of all actions taken (files modified, tools executed, tests run) at the end of every task execution.",
@@ -433,6 +438,9 @@ export class AgentLoop {
         o.digest.setGoal(userGoal);
     this.notifyStage(1, "loading workspace context");
     await this.emit({ type: "user_message", content: userGoal, ts: Date.now() });
+
+    // Classify user intent to determine tool usage boundaries
+    this.currentIntent = classifyUserIntent(userGoal);
 
 
     const messages: ModelMessage[] = [{ role: "user", content: userGoal }];

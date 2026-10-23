@@ -79,6 +79,37 @@ export type ModelEvent =
 /** Execution mode (Cline parity): Plan = read-only tools only; Act = full tools. */
 export type AgentMode = "plan" | "act";
 
+// Intent classification for tool usage boundaries
+export type IntentType = "GENERAL_KNOWLEDGE" | "WORKSPACE_TASK";
+
+/**
+ * classifyUserIntent - Determine whether a user query should trigger
+ * workspace tools or be answered directly from model knowledge.
+ *
+ * - GENERAL_KNOWLEDGE: Conceptual, educational, or programming questions
+ *   where no local workspace inspection is needed (e.g., "what is java",
+ *   "explain REST APIs", "how does garbage collection work").
+ * - WORKSPACE_TASK: Prompts that explicitly ask for code modification,
+ *   file audits, command execution, or project file context.
+ */
+export function classifyUserIntent(userGoal: string): IntentType {
+  const lower = userGoal.toLowerCase().trim();
+
+  // If the user explicitly references workspace files, folders, or commands,
+  // treat it as a workspace task.
+  const workspaceKeywords = [
+    "file", "folder", "workspace", "project", "code", "directory",
+    "search", "glob", "grep", "list", "read", "write", "edit",
+    "terminal", "command", "run", "execute", "bash", "powershell",
+  ];
+  for (const kw of workspaceKeywords) {
+    if (lower.includes(kw)) return "WORKSPACE_TASK";
+  }
+
+  // Default: treat as general knowledge unless clearly a workspace task.
+  return "GENERAL_KNOWLEDGE";
+}
+
 
 export interface ChatResponse {
   text: string;
