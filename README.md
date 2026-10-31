@@ -341,7 +341,7 @@ Press `F5` in VS Code to launch the extension in a development host.
 
 ## 🤝 Contributing
 
-Contributions are welcome.
+Contributions are welcome — and contributors will be **paid according to their contributions** once NEXIPI grows into a well-known company and its user base scales.
 
 1. Fork the repository.
 2. Create a feature branch.
@@ -353,6 +353,8 @@ Contributions are welcome.
 npm run lint
 npm test
 ```
+
+6. Open a pull request.
 
 6. Open a pull request.
 
