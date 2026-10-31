@@ -360,15 +360,8 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
   const lines: string[] = [];
 
   if (m.role === "user") {
-    // Single breadcrumb header above user message
+    // Single consolidated user line with highlighted badge and content
     lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m " + (m.content ?? ""));
-    // Content lines with magenta gutter pillar (user highlighted block)
-    const contentLines = renderMarkdownToAnsi(m.content ?? "", width);
-    if (contentLines[0]) {
-      lines.push(CYAN + "│" + RESET + " " + contentLines[0]);
-    }
-    // Remaining content lines without the pillar prefix
-    lines.push(...contentLines.slice(1));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));

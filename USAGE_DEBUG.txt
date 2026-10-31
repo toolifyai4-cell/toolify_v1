@@ -1,16 +1,16 @@
 {
-  "fixtureHome": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-lD5OaL",
-  "homedir": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-lD5OaL",
-  "userprofile": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-lD5OaL",
+  "fixtureHome": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-vzPQLJ",
+  "homedir": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-vzPQLJ",
+  "userprofile": "C:\\Users\\anuma\\AppData\\Local\\Temp\\toolify-home-vzPQLJ",
   "cfgJson": {
     "apiKeys": {
       "openai": "sk-fixture-live-key"
     },
     "baseUrls": {
-      "openai": "http://127.0.0.1:57741/v1"
+      "openai": "http://127.0.0.1:53694/v1"
     }
   },
-  "url": "http://127.0.0.1:57741/v1",
-  "adapterBaseUrl": "http://127.0.0.1:57741/v1",
-  "expectedBaseUrl": "http://127.0.0.1:57741/v1"
+  "url": "http://127.0.0.1:53694/v1",
+  "adapterBaseUrl": "http://127.0.0.1:53694/v1",
+  "expectedBaseUrl": "http://127.0.0.1:53694/v1"
 }
