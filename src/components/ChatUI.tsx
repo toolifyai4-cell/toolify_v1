@@ -393,6 +393,8 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
       const resLine = badge + " " + r.content.slice(0, Math.min(200, [...r.content].length));
       lines.push(...wrapAnsi(resLine, width));
     }
+    // CLEAN DIVIDER: Add a full-width divider line immediately after NEXIPI completes its response
+    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
   }
   return lines;
 }
@@ -742,11 +744,6 @@ export const ChatUI = (props: ChatUIProps) => {
     for (let i = 0; i < props.messages.length; i++) {
       const m = props.messages[i];
       acc = acc.concat(messageToLines(m, columns));
-      // Single subtle full-width divider between User turn -> Assistant response only.
-      // Prevents double dividers and keeps line count accurate for viewport slicing.
-      if (m.role === "user" && i + 1 < props.messages.length && props.messages[i + 1].role === "assistant") {
-        acc.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
-      }
     }
     return acc;
   }, [props.messages, columns]);
