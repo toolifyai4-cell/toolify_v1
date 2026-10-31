@@ -341,7 +341,9 @@ Press `F5` in VS Code to launch the extension in a development host.
 
 ## 🤝 Contributing
 
-Contributions are welcome — and contributors will be **paid according to their contributions** once NEXIPI grows into a well-known company and its user base scales.
+Contributions are welcome — and contributors will be <span style="color:#22c55e;font-weight:bold">paid according to their contributions</span> once NEXIPI grows into a well-known company and its user base scales.
+
+> We're more than a codebase — we're a family building NEXIPI together. Every contribution, big or small, matters, and we're here to support each other through the journey. Whether you're fixing a typo, designing a feature, or just asking questions, you belong here. Let's grow this into something great, together. 💛
 
 1. Fork the repository.
 2. Create a feature branch.
