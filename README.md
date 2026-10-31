@@ -160,7 +160,7 @@ NEXIPI supports a provider abstraction so you can choose the model that fits you
 ### Clone and install
 
 ```bash
-git clone [https://github.com/](https://github.com/)<your-username>/nexipi.git
+git clone https://github.com/<your-username>/nexipi.git
 cd nexipi
 npm install
 ```
@@ -198,7 +198,7 @@ Create a `toolify.config.json` file in your workspace root:
     },
     "openai": {
       "apiKey": "${env:OPENAI_API_KEY}",
-      "baseUrl": "[https://api.openai.com/v1](https://api.openai.com/v1)",
+      "baseUrl": "https://api.openai.com/v1",
       "model": "gpt-4o"
     }
   },
@@ -251,39 +251,17 @@ Explain how authentication works in this project
 
 ## 🏗️ Architecture
 
-```text
-┌──────────────────────────────────────────────┐
-│                Terminal / VS Code UI          │
-│                                              │
-│  Scrollable chat │ Tool logs │ Status bar    │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│               Agent Controller               │
-│  Sessions │ Modes │ Events │ Cancellation    │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                Agent Runtime                 │
-│                                              │
-│  Context Engine → Model Provider → Tools     │
-│        ↑                            │        │
-│        └────── Tool Results ─────────┘        │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│           Permissions and Sandbox            │
-│  Path guards │ Approvals │ Checkpoints       │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                User Workspace                │
-│     Files │ Git │ Commands │ Tests │ Builds  │
-└──────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[Terminal / VS Code UI<br/>Scrollable chat · Tool logs · Status bar] --> B[Agent Controller<br/>Sessions · Modes · Events · Cancellation]
+    B --> C[Agent Runtime]
+    C --> D[Context Engine]
+    D --> E[Model Provider]
+    E --> F[Tools]
+    F -->|Tool Results| D
+    C --> G[Permissions & Sandbox<br/>Path guards · Approvals · Checkpoints]
+    G --> H[User Workspace<br/>Files · Git · Commands · Tests · Builds]
+    H --> F
 ```
 
 ### Core modules
@@ -299,6 +277,31 @@ Explain how authentication works in this project
 | `src/components/` | Terminal UI components |
 | `webview-ui/` | React + Vite chat interface |
 | `src/verify/` | Verification gate for builds and tests |
+
+---
+
+## 🔄 Agent Workflow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Plan Mode
+    participant B as Build Mode
+    participant T as Tool Runtime
+    participant W as Workspace
+    U->>P: Describe task
+    P->>T: Inspect files / search
+    T->>W: Read-only queries
+    W-->>T: Results
+    T-->>P: Context
+    P-->>U: Proposed plan
+    U->>B: Approve
+    B->>T: Apply changes
+    T->>W: Write / run commands
+    W-->>T: Output
+    T-->>B: Verified
+    B-->>U: Summary + diff
+```
 
 ---
 
@@ -351,8 +354,56 @@ npm test
 
 6. Open a pull request.
 
+<details>
+<summary><b>📋 Contribution checklist</b></summary>
+
+- [ ] Code compiles (`npm run build`)
+- [ ] Lint passes (`npm run lint`)
+- [ ] Tests pass (`npm test`)
+- [ ] New behavior is documented
+- [ ] No secrets committed
+- [ ] License headers preserved
+
+</details>
+
 ---
 
 ## 📄 License
 
 Licensed under the [Apache License 2.0](./LICENSE).
+
+Copyright 2026 **NAVEEN RAJ A**.
+
+<details>
+<summary><b>📜 License summary</b></summary>
+
+Apache License 2.0 is a permissive license that allows you to:
+
+- ✅ Use the software for any purpose.
+- ✅ Modify and distribute it.
+- ✅ Use patents granted by contributors.
+- ✅ Include it in proprietary software.
+
+Conditions you must meet:
+
+- 📄 Include a copy of the license.
+- 📝 State any significant changes.
+- 🏷️ Retain copyright, patent, trademark, and attribution notices.
+
+Limitations:
+
+- ❌ No trademark rights are granted.
+- ❌ No warranty is provided.
+- ❌ No liability is assumed.
+
+Full text: [`LICENSE`](./LICENSE).
+
+</details>
+
+---
+
+<div align="center">
+
+Made with ⚡ by NAVEEN RAJ A · Licensed under Apache 2.0
+
+</div>
