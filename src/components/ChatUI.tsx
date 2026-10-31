@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Box, Text, useCursor, useInput, usePaste, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
@@ -6,6 +7,7 @@ import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuH
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import { ThemeModal } from "./ThemeModal.js";
+/* Selection/copy support added for nexipi Cline-like functionality */
 import { copyToClipboard } from "../utils/clipboard.js";
 import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
 import type { ModelDescriptor } from "../models/model-registry.js";
@@ -19,6 +21,48 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   toolResults?: Array<{ callId: string; content: string; isError?: boolean }>;
   thinking?: boolean;
+}
+
+// Selection range for text selection/highlighting
+type SelectionRange = { start: number; end: number };
+
+// Get the currently selected text from message content
+function getSelectedText(content: string, selection: SelectionRange): string {
+  const start = Math.min(selection.start, selection.end);
+  const end = Math.max(selection.start, selection.end);
+  return content.slice(start, end);
+}
+
+// Copy selected text to clipboard
+function copySelectedText(content: string, selection: SelectionRange): boolean {
+  const selected = getSelectedText(content, selection);
+  if (selected.trim()) {
+    return copyToClipboard(selected);
+  }
+  return false;
+}
+
+// Render message content with selection highlighting
+function renderMessageWithSelection(
+  content: string,
+  selection: SelectionRange
+): string {
+  const stripped = content.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+  const start = Math.max(0, Math.min(selection.start, stripped.length));
+  const end = Math.max(0, Math.min(selection.end, stripped.length));
+
+  if (start >= end) {
+    return content;
+  }
+
+  const before = stripped.slice(0, start);
+  const selected = stripped.slice(start, end);
+  const after = stripped.slice(end);
+
+  // Highlight selected text with reverse video (standout mode)
+  const highlighted = `\x1b[7m${selected}\x1b[0m`;
+
+  return `${before}${highlighted}${after}`;
 }
 
 export interface StatusInfo {
@@ -69,19 +113,20 @@ export interface ChatUIProps {
   readonly currentDetailMessage?: string;
 }
 
-export const DIM = "\x1b[2m";
+export const DIM = "";
 
-// ANSI mouse tracking sequences (enabled on mount, disabled on unmount)
-export const ANSI_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
-export const ANTI_MOUSE_TRACKING = "\x1b[?1000l\x1b[?1006l";
-
-export const BOTTOM_PANEL_HEIGHT = 7;
 export const CYAN = "\x1b[36m";
+export const MAGENTA = "\x1b[35m";
+export const DIM_BREADCRUMB = "";
 export const GREEN = "\x1b[32m";
 export const YELLOW = "\x1b[33m";
 export const RED = "\x1b[31m";
 export const BLUE_BRIGHT = "\x1b[94m";
 export const RESET = "\x1b[0m";
+
+// ANSI mouse tracking sequences (enabled on mount, disabled on unmount)
+export const ANSI_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
+export const ANTI_MOUSE_TRACKING = "\x1b[?1000l\x1b[?1006l";
 
 /** Thinking-spinner glyphs (real code points, not escaped text). */
 export const BALL_ACTIVE = "●";
@@ -92,7 +137,7 @@ export const BALL_IDLE = "○";
  * input box (3) + status bar (3). The transcript window occupies
  * `rows - BOTTOM_PANEL_HEIGHT` rows above it.
  */
-//export const BOTTOM_PANEL_HEIGHT = 7;
+export const BOTTOM_PANEL_HEIGHT = 7;
 
 
 /** Messages scrolled per PgUp / PgDn press. */
@@ -117,16 +162,17 @@ export function estimateMessageLines(m: ChatMessage, columns: number): number {
       .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / width)), 0);
   };
   let lines = 0;
+  // Add breadcrumb header line (dim minimal text above each response)
+  lines += 1; // breadcrumb header
   if (m.role === "user") {
-    lines += 1 + wrapCount(m.content);
+    lines += wrapCount(m.content);
   } else if (isErrorBanner(m.content)) {
     lines += wrapCount(m.content);
   } else {
-    if (m.content) lines += 1; // NEXIPI badge row
     lines += wrapCount(m.content);
     lines += (m.toolCalls?.length ?? 0) + (m.toolResults?.length ?? 0);
   }
-  return Math.max(3, lines + 1); // +1 padding row; short messages render ~3 rows
+  return Math.max(2, lines + 1); // +1 padding row; shorter messages with gutter pillars
 }
 
 export function formatTokenCount(n: number): string {
@@ -149,7 +195,8 @@ export function stripAnsi(s: string): string {
 }
 
 function visibleLength(s: string): number {
-  return stripAnsi(s).length;
+  // Use spread operator to properly count Unicode code points (handles multi-byte like Tamil, emoji, etc.)
+  return [...stripAnsi(s)].length;
 }
 
 function wrapAnsi(text: string, width: number): string[] {
@@ -253,7 +300,7 @@ function renderMarkdownToAnsi(content: string, width: number): string[] {
       if (!inCode) {
         inCode = true;
         const lang = trimmed.slice(3).trim() || "text";
-        const innerWidth = Math.max(0, width - 4 - lang.length);
+        const innerWidth = Math.max(0, width - 4 - [...lang].length);
         lines.push(DIM + "┌─ " + RESET + CYAN + "\x1b[1m" + lang + RESET + DIM + " " + "─".repeat(innerWidth) + "┐" + RESET);
       } else {
         inCode = false;
@@ -311,27 +358,39 @@ function renderMarkdownToAnsi(content: string, width: number): string[] {
 export function messageToLines(m: ChatMessage, columns: number): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
+
   if (m.role === "user") {
+    // Single breadcrumb header above user message
+    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m " + (m.content ?? ""));
+    // Content lines with magenta gutter pillar (user highlighted block)
     const contentLines = renderMarkdownToAnsi(m.content ?? "", width);
-    // Subtle full-width divider directly above each YOU turn so user prompts
-    // stand out clearly against previous agent output.
-    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
-    // YOU badge header line with blue background / white bold text.
-    lines.push("\x1b[44;30;1m YOU \x1b[0m");
-    // User query content lines below the badge.
-    lines.push(...contentLines);
-  } else if (isErrorBanner(m.content)) {
+    if (contentLines[0]) {
+      lines.push(CYAN + "│" + RESET + " " + contentLines[0]);
+    }
+    // Remaining content lines without the pillar prefix
+    lines.push(...contentLines.slice(1));
+  } else if (m.content.startsWith("[TIMEOUT]")) {
+    // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
-  } else {
-    if (m.content) lines.push("\x1b[45;37;1m NEXIPI \x1b[0m");
-    if (m.content) lines.push(...renderMarkdownToAnsi(m.content, width));
+  } else if (m.content) {
+    // Nexipi assistant turns: clean minimalist agent marker without ugly headers
+    lines.push(MAGENTA + "◆" + RESET + " nexipi");
+    // Content lines with magenta gutter pillar
+    const contentLines = renderMarkdownToAnsi(m.content, width);
+    if (contentLines[0]) {
+      lines.push(MAGENTA + "│" + RESET + " " + contentLines[0]);
+    }
+    for (const cl of contentLines.slice(1)) {
+      lines.push(MAGENTA + "│" + RESET + " " + cl);
+    }
+    // Tool calls and results
     for (const tc of m.toolCalls ?? []) {
-      const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, 120);
+      const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, Math.min(120, [...JSON.stringify(tc.input)].length));
       lines.push(...wrapAnsi(toolLine, width));
     }
     for (const r of m.toolResults ?? []) {
       const badge = r.isError ? RED + "[error]" + RESET : BLUE_BRIGHT + "[result]" + RESET;
-      const resLine = badge + " " + r.content.slice(0, 200);
+      const resLine = badge + " " + r.content.slice(0, Math.min(200, [...r.content].length));
       lines.push(...wrapAnsi(resLine, width));
     }
   }
@@ -342,24 +401,25 @@ export function renderMessageContent(m: ChatMessage): React.ReactNode {
   return (
     <>
       {m.role === "user" ? (
-        <Box flexDirection="column" width="100%">
-          <Text wrap="wrap">
-            <Text backgroundColor="blue" color="black" bold> YOU </Text>
-          </Text>
-          <Text wrap="wrap">{renderMarkdownToAnsi(m.content ?? "", 80).join("\n")}</Text>
+        <Box flexDirection="row" width="100%" marginY={1}>
+          <Text backgroundColor="cyan" color="black" bold> YOU </Text>
+          <Text> </Text>
+          <Text>{m.content}</Text>
         </Box>
-      ) : isErrorBanner(m.content) ? (
+      ) : m.content?.startsWith("[TIMEOUT]") ? (
         <Text wrap="wrap" color={m.content.startsWith("[TIMEOUT]") ? "yellow" : "red"}>{m.content}</Text>
       ) : (
         <Box flexDirection="column" width="100%">
           <Text wrap="wrap">
             {m.content && (
-              <Text backgroundColor="magenta" color="black" bold>
-                {" "}NEXIPI{" "}
-              </Text>
+              <Text color="magenta">◆ nexipi</Text>
             )}
           </Text>
-          {m.content ? <Text wrap="wrap">{renderMarkdownToAnsi(m.content, 80).join("\n")}</Text> : null}
+          {m.content ? <Text wrap="wrap">{renderMarkdownToAnsi(m.content, 80).map((line, i) => (
+                <Text key={i}>
+                  <Text color="magenta">│ </Text>{line}
+                </Text>
+              ))}</Text> : null}
         </Box>
       )}
 
@@ -407,6 +467,8 @@ export const ChatUI = (props: ChatUIProps) => {
   const [inputValue, setInputValue] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  /** Selection range for text copying: { start, end } character positions in the visible message content */
+  const [selection, setSelection] = useState<SelectionRange>({ start: 0, end: 0 });
   /** How many messages the transcript window is scrolled back from the newest. */
   const [scrollBack, setScrollBack] = useState(0);
   const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
@@ -543,6 +605,33 @@ export const ChatUI = (props: ChatUIProps) => {
       copyToClipboard(inputValue);
       return;
     }
+    // Selection/copy shortcuts for nexipi (Cline-like)
+    if (key.ctrl && key.shift && ch === 'a') {
+      // Select all: set selection to cover the entire input value
+      setSelection({ start: 0, end: inputValue.length });
+      return;
+    }
+    if (key.ctrl && key.shift && ch === 'c') {
+      // Copy selected text from message content or input
+      if (Object.keys(selection).length > 0 && selection.start !== selection.end) {
+        copySelectedText(inputValue, selection);
+        setToast("Copied to clipboard");
+      } else {
+        // Copy input value as fallback
+        copyToClipboard(inputValue);
+        setToast("Copied to clipboard");
+      }
+      return;
+    }
+    if (key.ctrl && key.shift && ch === 'm') {
+      // Copy current message content to clipboard
+      const currentMessage = props.messages[props.messages.length - 1];
+      if (currentMessage && currentMessage.content) {
+        copyToClipboard(currentMessage.content);
+        setToast("Copied to clipboard");
+      }
+      return;
+    }
     if (key.ctrl && key.backspace) {
       setInputValue((prev) => {
         const next = deleteWordLeft(prev);
@@ -674,6 +763,15 @@ export const ChatUI = (props: ChatUIProps) => {
   scrollBackRef.current = scrollBack;
   const maxScrollBackRef = useRef(maxScrollBack);
   maxScrollBackRef.current = maxScrollBack;
+  const [toast, setToast] = useState<string | null>(null);
+  // Auto-hide toast after 2.5 seconds
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    if (toast) {
+      timeoutId = setTimeout(() => setToast(null), 2500);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [toast]);
 
     const visibleLines = useMemo(() => {
     if (scrollBack === 0) {
@@ -695,6 +793,20 @@ export const ChatUI = (props: ChatUIProps) => {
 
   return (
     <Box flexDirection="column" height={rows} justifyContent="space-between" width="100%">
+      {toast && (
+        <Box
+          marginBottom={1}
+          padding={1}
+          borderStyle="round"
+          borderColor="green"
+          width={columns}
+          textAlign="center"
+        >
+          <Text color="green">
+            ✓ {toast}
+          </Text>
+        </Box>
+      )}
       {/* 1. TRANSCRIPT — bounded window INSIDE the frame. Messages are part
           of the dynamic output, so they stay visible across every repaint.
           (They used to live in Ink's <Static> above a fullscreen frame,
@@ -731,10 +843,22 @@ export const ChatUI = (props: ChatUIProps) => {
       ) : (
         <Box flexDirection="column" width={columns} height={availableHeight} flexGrow={1}>
                     {props.messages.length === 0 && !props.isRunning && (
-            <Box paddingTop={1} paddingBottom={1} width="100%">
-              <Text wrap="wrap">{CYAN}What can I do for you?{RESET}</Text>
-            </Box>
-          )}
+              <Box paddingTop={1} paddingBottom={1} width="100%" borderStyle="round" borderColor="cyan">
+                <Box width="100%" textAlign="center">
+                  <Text color="cyan">
+                    Welcome to NEXIPI
+                  </Text>
+                  <Text dimColor>
+                    Your AI coding agent for this workspace.
+                  </Text>
+                </Box>
+                <Box mt={1} width="100%" textAlign="center">
+                  <Text wrap="wrap">
+                    {CYAN}What can I do for you?{RESET}
+                  </Text>
+                </Box>
+              </Box>
+            )}
           {visibleLines.map((line, idx) => (
             <Text key={idx} wrap="wrap">
               {line}
