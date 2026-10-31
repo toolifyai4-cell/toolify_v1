@@ -28,6 +28,7 @@ It is designed for developers who want an agent that is:
 - **Safe by default** — Plan mode prevents accidental changes.
 - **Transparent** — every tool call, file edit, command, and result is visible.
 - **Model-flexible** — works with Anthropic, OpenAI-compatible APIs, and local models.
+- **Web-aware** — can search the web for current information.
 
 ---
 
@@ -60,6 +61,7 @@ NEXIPI can work with your project through tools such as:
 - Read Git status and repository context.
 - Run shell commands, builds, linters, and tests.
 - Create, edit, and update files with approval.
+- Search the web for up-to-date information.
 
 ### 🔁 Plan and Build modes
 
@@ -160,8 +162,8 @@ NEXIPI supports a provider abstraction so you can choose the model that fits you
 ### Clone and install
 
 ```bash
-git clone https://github.com/<your-username>/nexipi.git
-cd nexipi
+git clone https://github.com/toolifyai4-cell/toolify_v1.git
+cd toolify_v1
 npm install
 ```
 
