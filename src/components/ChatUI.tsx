@@ -374,9 +374,13 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else if (m.content) {
-    // Lock historical mode: if m.mode exists, use it. Otherwise fall back to current live mode.
-    const persistedMode = m.mode ?? currentMode ?? "plan";
-    const badgeBg = persistedMode === "plan" ? "\x1b[43m" : "\x1b[44m"; // Yellow for plan, Blue for build
+    // Self-stamp: if this message doesn't have a mode yet, lock it permanently 
+    // to whatever mode was active the moment it was first rendered.
+    if (!m.mode) {
+      m.mode = (currentMode as "plan" | "build") ?? "plan";
+    }
+
+    const badgeBg = m.mode === "plan" ? "\x1b[43m" : "\x1b[44m"; // Yellow for plan, Blue for build
     lines.push(`${badgeBg}\x1b[30m\x1b[1m NEXIPI \x1b[0m`);
 
     const contentLines = renderMarkdownToAnsi(m.content, width);
