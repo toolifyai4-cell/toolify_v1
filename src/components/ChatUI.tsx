@@ -21,6 +21,7 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   toolResults?: Array<{ callId: string; content: string; isError?: boolean }>;
   thinking?: boolean;
+  mode: "plan" | "build"; // Persisted mode at time of message generation
 }
 
 // Selection range for text selection/highlighting
@@ -118,6 +119,9 @@ export const DIM = "";
 export const CYAN = "\x1b[36m";
 export const MAGENTA = "\x1b[35m";
 export const DIM_BREADCRUMB = "";
+export const USER_BADGE = "\x1b[42m\x1b[30m\x1b[1m"; // green bg, black bold - distinct from NEXIPI
+export const NEXIPI_PLAN = "\x1b[43m\x1b[30m\x1b[1m"; // yellow bg for Plan mode
+export const NEXIPI_BUILD = "\x1b[44m\x1b[30m\x1b[1m"; // blue bg for Build mode
 export const GREEN = "\x1b[32m";
 export const YELLOW = "\x1b[33m";
 export const RED = "\x1b[31m";
@@ -364,21 +368,22 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
 
   if (m.role === "user") {
     // Single consolidated user line with highlighted badge and content
-    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m  " + (m.content ?? ""));
+    // USER badge: green background (distinct from NEXIPI's mode-based colors)
+    lines.push(USER_BADGE + " YOU \x1b[0m  " + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else if (m.content) {
-    // Nexipi assistant turns: clean minimalist agent marker without ugly headers
-    lines.push(MAGENTA + "◆" + RESET + " nexipi");
-    // Content lines with magenta gutter pillar
+    // NEXIPI badge color based on message's persisted mode
+    const nexipiBadge = m.mode === "plan" ? NEXIPI_PLAN : NEXIPI_BUILD;
+    lines.push(nexipiBadge + " NEXIPI \x1b[0m");
+
+    // Content lines below the badge
     const contentLines = renderMarkdownToAnsi(m.content, width);
-    if (contentLines[0]) {
-      lines.push(MAGENTA + "│" + RESET + " " + contentLines[0]);
+    for (const cl of contentLines) {
+      lines.push("  " + cl);
     }
-    for (const cl of contentLines.slice(1)) {
-      lines.push(MAGENTA + "│" + RESET + " " + cl);
-    }
+
     // Tool calls and results
     for (const tc of m.toolCalls ?? []) {
       const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, Math.min(120, [...JSON.stringify(tc.input)].length));
@@ -389,9 +394,10 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
       const resLine = badge + " " + r.content.slice(0, Math.min(200, [...r.content].length));
       lines.push(...wrapAnsi(resLine, width));
     }
-    // CLEAN DIVIDER: Add a full-width divider line immediately after NEXIPI completes its response
-    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
+
+    // Breathing space and full-width divider after NEXIPI finishes
     lines.push("");
+    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
   }
   return lines;
 }
@@ -741,6 +747,15 @@ export const ChatUI = (props: ChatUIProps) => {
     for (let i = 0; i < props.messages.length; i++) {
       const m = props.messages[i];
       acc = acc.concat(messageToLines(m, columns));
+      // Add a clear vertical spacer between different message types
+      // (e.g., between USER "YOU" and NEXIPI responses)
+      if (i < props.messages.length - 1) {
+        const currentIsUser = m.role === "user";
+        const nextIsUser = props.messages[i + 1].role === "user";
+        if (currentIsUser !== nextIsUser) {
+          acc.push(""); // spacer between different message types
+        }
+      }
     }
     return acc;
   }, [props.messages, columns]);
