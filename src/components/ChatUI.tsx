@@ -120,7 +120,7 @@ export const DIM = "";
 export const CYAN = "\x1b[36m";
 export const MAGENTA = "\x1b[35m";
 export const DIM_BREADCRUMB = "";
-export const USER_BADGE = "\x1b[47m\x1b[30m\x1b[1m"; // grey bg, black bold - distinct from NEXIPI
+export const USER_BADGE = "\x1b[39m\x1b[1m"; // default fg, bold - Cline style transparent border
 export const NEXIPI_PLAN = "\x1b[43m\x1b[30m\x1b[1m"; // yellow bg for Plan mode
 export const NEXIPI_BUILD = "\x1b[44m\x1b[30m\x1b[1m"; // blue bg for Build mode
 export const GREEN = "\x1b[32m";
@@ -375,8 +375,7 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     // Highlighted grey USER badge with clear space after
     lines.push(`${USER_BADGE} YOU \x1b[0m  ` + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
-    // Error banner (timeout) - two blank lines for spacing
-    lines.push("");
+    // Error banner (timeout) - one blank line for spacing
     lines.push("");
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else if (m.content) {
@@ -406,10 +405,6 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
       const resLine = badge + " " + r.content.slice(0, Math.min(200, [...r.content].length));
       lines.push(...wrapAnsi(resLine, width));
     }
-
-    // Clean trailing breathing space (full-width line separator removed)
-    lines.push("");
-    lines.push("");
   }
   return lines;
 }
@@ -759,15 +754,6 @@ export const ChatUI = (props: ChatUIProps) => {
     for (let i = 0; i < props.messages.length; i++) {
       const m = props.messages[i];
       acc = acc.concat(messageToLines(m, columns, props.mode));
-      // Add a clear vertical spacer between different message types
-      // (e.g., between USER "YOU" and NEXIPI responses)
-      if (i < props.messages.length - 1) {
-        const currentIsUser = m.role === "user";
-        const nextIsUser = props.messages[i + 1].role === "user";
-        if (currentIsUser !== nextIsUser) {
-          acc.push(""); // spacer between different message types
-        }
-      }
     }
     return acc;
   }, [props.messages, columns, props.mode]);

@@ -1,7 +1,7 @@
 {
   "provider": "openrouter",
-  "model": "minimax/minimax-m3.1-flash",
+  "model": "anthropic/claude-3.5-sonnet",
   "baseUrl": "https://api.openai.com/v1",
-  "theme": "toolify-dark",
+  "theme": "monochrome",
   "autoUpdate": true
 }
