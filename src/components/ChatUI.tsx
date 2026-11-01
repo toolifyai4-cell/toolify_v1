@@ -21,7 +21,8 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   toolResults?: Array<{ callId: string; content: string; isError?: boolean }>;
   thinking?: boolean;
-  mode: "plan" | "build"; // Persisted mode at time of message generation
+  // Persisted mode at time of message generation (optional - unset for new/streaming messages)
+  mode?: "plan" | "build";
 }
 
 // Selection range for text selection/highlighting
@@ -359,32 +360,30 @@ function renderMarkdownToAnsi(content: string, width: number): string[] {
  * result becomes one or more plain text lines so the transcript can be
  * sliced line-by-line without squishing or clipping.
  */
-export function messageToLines(m: ChatMessage, columns: number): string[] {
+export function messageToLines(m: ChatMessage, columns: number, currentMode?: string): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
 
-  // Add a breathing space before each turn
+  // Always add a clear vertical spacing gap before any message turn
   lines.push("");
 
   if (m.role === "user") {
-    // Single consolidated user line with highlighted badge and content
-    // USER badge: green background (distinct from NEXIPI's mode-based colors)
-    lines.push(USER_BADGE + " YOU \x1b[0m  " + (m.content ?? ""));
+    // Highlighted cyan USER badge with clear space after
+    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m  " + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else if (m.content) {
-    // NEXIPI badge color based on message's persisted mode
-    const nexipiBadge = m.mode === "plan" ? NEXIPI_PLAN : NEXIPI_BUILD;
-    lines.push(nexipiBadge + " NEXIPI \x1b[0m");
+    // Lock historical mode: if m.mode exists, use it. Otherwise fall back to current live mode.
+    const persistedMode = m.mode ?? currentMode ?? "plan";
+    const badgeBg = persistedMode === "plan" ? "\x1b[43m" : "\x1b[44m"; // Yellow for plan, Blue for build
+    lines.push(`${badgeBg}\x1b[30m\x1b[1m NEXIPI \x1b[0m`);
 
-    // Content lines below the badge
     const contentLines = renderMarkdownToAnsi(m.content, width);
     for (const cl of contentLines) {
       lines.push("  " + cl);
     }
 
-    // Tool calls and results
     for (const tc of m.toolCalls ?? []) {
       const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, Math.min(120, [...JSON.stringify(tc.input)].length));
       lines.push(...wrapAnsi(toolLine, width));
@@ -746,7 +745,7 @@ export const ChatUI = (props: ChatUIProps) => {
     let acc: string[] = [];
     for (let i = 0; i < props.messages.length; i++) {
       const m = props.messages[i];
-      acc = acc.concat(messageToLines(m, columns));
+      acc = acc.concat(messageToLines(m, columns, props.mode));
       // Add a clear vertical spacer between different message types
       // (e.g., between USER "YOU" and NEXIPI responses)
       if (i < props.messages.length - 1) {
@@ -758,7 +757,7 @@ export const ChatUI = (props: ChatUIProps) => {
       }
     }
     return acc;
-  }, [props.messages, columns]);
+  }, [props.messages, columns, props.mode]);
 
   const totalLines = allLines.length;
   const maxScrollBack = Math.max(0, totalLines - availableHeight);
