@@ -368,10 +368,16 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
   lines.push("");
 
   if (m.role === "user") {
+    // Leave a clean 2-line gap before any USER turn starts
+    lines.push("");
+    lines.push("");
+    
     // Highlighted grey USER badge with clear space after
     lines.push(`${USER_BADGE} YOU \x1b[0m  ` + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
-    // Error banner (timeout)
+    // Error banner (timeout) - two blank lines for spacing
+    lines.push("");
+    lines.push("");
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
   } else if (m.content) {
     // Self-stamp: if this message doesn't have a mode yet, lock it permanently 
@@ -379,6 +385,9 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     if (!m.mode) {
       m.mode = (currentMode as "plan" | "build") ?? "plan";
     }
+
+    // Add a blank line before NEXIPI turn
+    lines.push("");
 
     const badgeBg = m.mode === "plan" ? "\x1b[43m" : "\x1b[44m"; // Yellow for plan, Blue for build
     lines.push(`${badgeBg}\x1b[30m\x1b[1m NEXIPI \x1b[0m`);
@@ -399,6 +408,7 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     }
 
     // Clean trailing breathing space (full-width line separator removed)
+    lines.push("");
     lines.push("");
   }
   return lines;
