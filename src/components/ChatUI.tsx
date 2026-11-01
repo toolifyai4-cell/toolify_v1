@@ -398,9 +398,8 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
       lines.push(...wrapAnsi(resLine, width));
     }
 
-    // Breathing space and full-width divider after NEXIPI finishes
+    // Clean trailing breathing space (full-width line separator removed)
     lines.push("");
-    lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
   }
   return lines;
 }
