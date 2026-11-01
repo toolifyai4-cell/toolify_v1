@@ -120,7 +120,7 @@ export const DIM = "";
 export const CYAN = "\x1b[36m";
 export const MAGENTA = "\x1b[35m";
 export const DIM_BREADCRUMB = "";
-export const USER_BADGE = "\x1b[42m\x1b[30m\x1b[1m"; // green bg, black bold - distinct from NEXIPI
+export const USER_BADGE = "\x1b[47m\x1b[30m\x1b[1m"; // grey bg, black bold - distinct from NEXIPI
 export const NEXIPI_PLAN = "\x1b[43m\x1b[30m\x1b[1m"; // yellow bg for Plan mode
 export const NEXIPI_BUILD = "\x1b[44m\x1b[30m\x1b[1m"; // blue bg for Build mode
 export const GREEN = "\x1b[32m";
@@ -368,8 +368,8 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
   lines.push("");
 
   if (m.role === "user") {
-    // Highlighted cyan USER badge with clear space after
-    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m  " + (m.content ?? ""));
+    // Highlighted grey USER badge with clear space after
+    lines.push(`${USER_BADGE} YOU \x1b[0m  ` + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
@@ -410,7 +410,7 @@ export function renderMessageContent(m: ChatMessage): React.ReactNode {
     <>
       {m.role === "user" ? (
         <Box flexDirection="row" width="100%" marginY={1}>
-          <Text backgroundColor="cyan" color="black" bold> YOU </Text>
+          <Text backgroundColor="gray" color="black" bold> YOU </Text>
           <Text> </Text>
           <Text>{m.content}</Text>
         </Box>
