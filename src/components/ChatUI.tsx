@@ -359,9 +359,12 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
 
+  // Add a breathing space before each turn
+  lines.push("");
+
   if (m.role === "user") {
     // Single consolidated user line with highlighted badge and content
-    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m " + (m.content ?? ""));
+    lines.push("\x1b[46m\x1b[30m\x1b[1m YOU \x1b[0m  " + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout)
     lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
@@ -388,6 +391,7 @@ export function messageToLines(m: ChatMessage, columns: number): string[] {
     }
     // CLEAN DIVIDER: Add a full-width divider line immediately after NEXIPI completes its response
     lines.push(DIM + "─".repeat(Math.max(1, columns)) + RESET);
+    lines.push("");
   }
   return lines;
 }
@@ -833,22 +837,20 @@ export const ChatUI = (props: ChatUIProps) => {
       ) : (
         <Box flexDirection="column" width={columns} height={availableHeight} flexGrow={1}>
                     {props.messages.length === 0 && !props.isRunning && (
-              <Box paddingTop={1} paddingBottom={1} width="100%" borderStyle="round" borderColor="cyan">
-                <Box width="100%" textAlign="center">
-                  <Text color="cyan">
-                    Welcome to NEXIPI
-                  </Text>
-                  <Text dimColor>
-                    Your AI coding agent for this workspace.
-                  </Text>
-                </Box>
-                <Box mt={1} width="100%" textAlign="center">
-                  <Text wrap="wrap">
-                    {CYAN}What can I do for you?{RESET}
-                  </Text>
-                </Box>
-              </Box>
-            )}
+  <Box paddingTop={2} paddingBottom={2} width="100%" flexDirection="column" alignItems="center">
+    <Text color="cyan" bold>
+      Welcome to NEXIPI
+    </Text>
+    <Text> </Text>
+    <Text dimColor>
+      Your AI coding agent for this workspace.
+    </Text>
+    <Text> </Text>
+    <Text color="cyan">
+      What can I do for you?
+    </Text>
+  </Box>
+)}
           {visibleLines.map((line, idx) => (
             <Text key={idx} wrap="wrap">
               {line}
