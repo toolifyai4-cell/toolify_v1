@@ -1,0 +1,22 @@
+{
+  "name": "@toolify/sdk",
+  "version": "0.1.0",
+  "description": "Toolify public SDK – create tools, agents, and hooks for extensibility.",
+  "main": "./src/sdk/index.ts",
+  "types": "./src/sdk/index.ts",
+  "files": [
+    "src/sdk"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit --skipLibCheck",
+    "test": "bun test"
+  },
+  "license": "MIT",
+  "keywords": [
+    "toolify",
+    "ai",
+    "agent",
+    "sdk",
+    "plugin"
+  ]
+}
