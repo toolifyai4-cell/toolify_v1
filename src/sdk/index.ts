@@ -16,3 +16,6 @@ export {
   hooks as hookTypes,
 };
 export * from "./agent";
+
+// Multi‑agent team coordinator (new in v0.2.0)
+export { TeamCoordinator } from "./teamCoordinator";
