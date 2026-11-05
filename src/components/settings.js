@@ -10,3 +10,11 @@ export const THEME_LABELS = {
   "solarized-dark": "Solarized Dark",
   "cyberpunk": "Cyberpunk",
 };
+
+/** Default plugin state: all four shipped plugins start enabled. */
+export const DEFAULT_PLUGINS = {
+  ponytail: true,
+  graphify: true,
+  ruflo: true,
+  uflo: true,
+};

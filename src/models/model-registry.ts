@@ -49,6 +49,7 @@ export const PROVIDER_NAMES: Record<string, string> = {
   gemini: "Google Gemini",
   groq: "Groq",
   deepseek: "DeepSeek",
+  bedrock: "AWS Bedrock",
   openrouter: "OpenRouter",
   perplexity: "Perplexity AI",
   omniroute: "OmniRoute",
