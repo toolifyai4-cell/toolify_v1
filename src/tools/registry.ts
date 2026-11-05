@@ -14,7 +14,7 @@ export interface ProjectPolicyConfig {
   denyPaths?: string[];
 }
 
-export const TOOL_SCHEMAS: ToolSchema[] = [
+export let TOOL_SCHEMAS: ToolSchema[] = [
   {
     name: "read_file",
     description: "Read a text file from the workspace.",
@@ -98,6 +98,11 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     },
   },
 ];
+
+/** Add extra tool schemas to the global schema list (e.g. discovered plugins). */
+export function addToolSchemas(schemas: ToolSchema[]): void {
+  TOOL_SCHEMAS = [...TOOL_SCHEMAS, ...schemas];
+}
 
 /** Exported so the ToolDefinition adapter can look up the risk tier. */
 export const TIER_BY_TOOL: Record<string, RiskTier> = {
