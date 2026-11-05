@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Box, Text, useCursor, useInput, usePaste, useStdout } from "ink";
 import type { AgentMode, ToolCall } from "../agent/types.js";
@@ -7,6 +8,7 @@ import { CommandMenu, filterSlashCommands, COMMAND_MENU_PAGE_SIZE, estimateMenuH
 import { SettingsMenu } from "./SettingsMenu.js";
 import { ModelsTab } from "./ModelsTab.js";
 import { ThemeModal } from "./ThemeModal.js";
+import { useTheme } from "../theme/ThemeContext.js";
 /* Selection/copy support added for nexipi Cline-like functionality */
 import { copyToClipboard } from "../utils/clipboard.js";
 import { deleteWordLeft, deleteWordRight } from "../utils/editing.js";
@@ -360,7 +362,7 @@ function renderMarkdownToAnsi(content: string, width: number): string[] {
  * result becomes one or more plain text lines so the transcript can be
  * sliced line-by-line without squishing or clipping.
  */
-export function messageToLines(m: ChatMessage, columns: number, currentMode?: string): string[] {
+export function messageToLines(m: ChatMessage, columns: number, currentMode?: string, tokens?: ThemeTokens): string[] {
   const width = Math.max(10, columns - 4);
   const lines: string[] = [];
 
@@ -373,11 +375,11 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     lines.push("");
     
     // Highlighted grey USER badge with clear space after
-    lines.push(`${USER_BADGE} YOU \x1b[0m  ` + (m.content ?? ""));
+    lines.push(`${tokens?.foreground} YOU \x1b[0m  ` + (m.content ?? ""));
   } else if (m.content.startsWith("[TIMEOUT]")) {
     // Error banner (timeout) - one blank line for spacing
     lines.push("");
-    lines.push(...wrapAnsi(RED + (m.content ?? "") + RESET, width));
+    lines.push(...wrapAnsi(tokens?.error + (m.content ?? "") + RESET, width));
   } else if (m.content) {
     // Self-stamp: if this message doesn't have a mode yet, lock it permanently 
     // to whatever mode was active the moment it was first rendered.
@@ -388,7 +390,7 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     // Add a blank line before NEXIPI turn
     lines.push("");
 
-    const badgeBg = m.mode === "plan" ? "\x1b[43m" : "\x1b[44m"; // Yellow for plan, Blue for build
+    const badgeBg = tokens?.primary ?? (m.mode === "plan" ? "\x1b[43m" : "\x1b[44m"); // Plan/Build colors from theme
     lines.push(`${badgeBg}\x1b[30m\x1b[1m NEXIPI \x1b[0m`);
 
     const contentLines = renderMarkdownToAnsi(m.content, width);
@@ -397,11 +399,11 @@ export function messageToLines(m: ChatMessage, columns: number, currentMode?: st
     }
 
     for (const tc of m.toolCalls ?? []) {
-      const toolLine = CYAN + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, Math.min(120, [...JSON.stringify(tc.input)].length));
+      const toolLine = tokens?.primary + "[TOOL] " + tc.name + RESET + " " + JSON.stringify(tc.input).slice(0, Math.min(120, [...JSON.stringify(tc.input)].length));
       lines.push(...wrapAnsi(toolLine, width));
     }
     for (const r of m.toolResults ?? []) {
-      const badge = r.isError ? RED + "[error]" + RESET : BLUE_BRIGHT + "[result]" + RESET;
+      const badge = r.isError ? tokens?.error : tokens?.primary;
       const resLine = badge + " " + r.content.slice(0, Math.min(200, [...r.content].length));
       lines.push(...wrapAnsi(resLine, width));
     }
@@ -474,6 +476,7 @@ export const ChatUI = (props: ChatUIProps) => {
     };
   }, [stdout]);
 
+  const { tokens } = useTheme();
   const rows = typeof stdout.rows === "number" && stdout.rows > 0 ? stdout.rows : 24;
 
   const [inputValue, setInputValue] = useState("");
@@ -753,7 +756,7 @@ export const ChatUI = (props: ChatUIProps) => {
     let acc: string[] = [];
     for (let i = 0; i < props.messages.length; i++) {
       const m = props.messages[i];
-      acc = acc.concat(messageToLines(m, columns, props.mode));
+      acc = acc.concat(messageToLines(m, columns, props.mode, tokens));
     }
     return acc;
   }, [props.messages, columns, props.mode]);

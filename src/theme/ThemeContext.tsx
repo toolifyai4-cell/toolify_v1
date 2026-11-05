@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { readConfigSync, writeConfig } from "../utils/config.js";
-import { THEMES, getThemeById } from "./themes.js";
+import { AVAILABLE_THEMES, getThemeById } from "./themes.js";
 import { getProviderTokens } from "./provider-colors.js";
 import type { Theme, ThemeTokens } from "../agent/types.js";
 import { THEME_IDS } from "../agent/types.js";

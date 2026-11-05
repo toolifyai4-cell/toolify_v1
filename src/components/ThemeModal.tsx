@@ -1,3 +1,4 @@
+/** Fixed theme modal with scrollable pagination for 9 themes */
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "../theme/ThemeContext.js";
@@ -28,6 +29,19 @@ export function ThemeModal({ isOpen, onClose }: ThemeModalProps): React.ReactEle
     return idx >= 0 ? idx : 0;
   });
 
+  // Scrollable navigation support for 9+ themes
+  const pageSize = 5; // Number of visible items in the modal view
+  const [scrollOffset, setScrollOffset] = React.useState(0);
+
+  // Update scroll offset when selection changes beyond visible window
+  React.useEffect(() => {
+    if (selected >= scrollOffset + pageSize) {
+      setScrollOffset(selected - pageSize + 1);
+    } else if (selected < scrollOffset) {
+      setScrollOffset(selected);
+    }
+  }, [selected, scrollOffset]);
+
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -54,6 +68,9 @@ export function ThemeModal({ isOpen, onClose }: ThemeModalProps): React.ReactEle
 
   if (!isOpen) return null;
 
+  const visibleThemes = availableThemes.slice(scrollOffset, scrollOffset + pageSize);
+  const totalPages = Math.ceil(availableThemes.length / pageSize);
+
   return (
     <Box width="100%" height={20} justifyContent="center" alignItems="center">
       <Box
@@ -72,8 +89,9 @@ export function ThemeModal({ isOpen, onClose }: ThemeModalProps): React.ReactEle
         </Box>
         <Box height={1} />
         <Box flexDirection="column" paddingX={1}>
-          {availableThemes.map((t, i) => {
-            const isSelected = i === selected;
+          {visibleThemes.map((t, i) => {
+            const globalIndex = scrollOffset + i;
+            const isSelected = globalIndex === selected;
             const isCurrent = t.id === theme.id;
             return (
               <Box
@@ -97,12 +115,34 @@ export function ThemeModal({ isOpen, onClose }: ThemeModalProps): React.ReactEle
               </Box>
             );
           })}
+          {/* Pagination controls when there are more themes than visible */}
+          {availableThemes.length > pageSize && totalPages > 1 && (
+            <Box height={1} paddingX={1}>
+              <Text dimColor>
+                {scrollOffset > 0 && " + " + scrollOffset} "/" {totalPages} pages{availableThemes.length - scrollOffset - pageSize > 0 && " + " + (availableThemes.length - scrollOffset - pageSize)} down
+                availableThemes.length - scrollOffset - pageSize > 0 && " + " +
+                availableThemes.length - scrollOffset - pageSize
+              
+              </Text>
+            </Box>
+          )}
         </Box>
         <Box height={1} />
         <Box paddingX={1}>
-          <Text dimColor>↑/↓ navigate · Enter select · Esc close</Text>
+          <Text dimColor>
+            ↑/↓ navigate · Enter select · Esc close{" "}
+            {totalPages > 1 && "page " + (Math.floor(scrollOffset / pageSize) + 1) + " of " + totalPages}}
+          </Text>
         </Box>
       </Box>
     </Box>
   );
 }
+
+{availableThemes.length > pageSize && totalPages > 1 && (
+            <Box height={1} paddingX={1}>
+              <Text dimColor>
+                {scrollOffset > 0 && " +" + scrollOffset}  {"/"}  {totalPages} pages{availableThemes.length - scrollOffset - pageSize > 0 && " + " + (availableThemes.length - scrollOffset - pageSize)} down
+              </Text>
+            </Box>
+          )}

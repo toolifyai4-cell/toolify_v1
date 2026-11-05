@@ -1,0 +1,123 @@
+/** Enhanced theme registry for the NEXIPI terminal interface.
+ * Each theme defines colors for the background, borders, accents,
+ * USER badge, and NEXIPI plan/build badges.
+ */
+export const AVAILABLE_THEMES = [
+  {
+    id: "toolify-dark",
+    name: "Toolify Dark",
+    description: "Default sleek dark terminal theme",
+    colors: {
+      background: "black",
+      border: "cyan",
+      accent: "cyan",
+      userBadgeBg: "gray",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "blue",
+    },
+  },
+  {
+    id: "monochrome",
+    name: "Monochrome",
+    description: "High-contrast clean greyscale editorial",
+    colors: {
+      background: "black",
+      border: "white",
+      accent: "white",
+      userBadgeBg: "white",
+      nexipiPlanBg: "white",
+      nexipiBuildBg: "gray",
+    },
+  },
+  {
+    id: "matrix",
+    name: "Matrix",
+    description: "Classic terminal phosphor green",
+    colors: {
+      background: "black",
+      border: "green",
+      accent: "green",
+      userBadgeBg: "green",
+      nexipiPlanBg: "green",
+      nexipiBuildBg: "green",
+    },
+  },
+  {
+    id: "dracula",
+    name: "Dracula",
+    description: "Vibrant purple and pink vampire palette",
+    colors: {
+      background: "black",
+      border: "magenta",
+      accent: "magenta",
+      userBadgeBg: "magenta",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "cyan",
+    },
+  },
+  {
+    id: "github-dark",
+    name: "GitHub Dark",
+    description: "Familiar dark mode inspired by GitHub code review",
+    colors: {
+      background: "black",
+      border: "blueBright",
+      accent: "blueBright",
+      userBadgeBg: "gray",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "blueBright",
+    },
+  },
+  {
+    id: "one-dark-pro",
+    name: "One Dark Pro",
+    description: "Atom's iconic dark aesthetic with rich cyan tones",
+    colors: {
+      background: "black",
+      border: "cyan",
+      accent: "cyan",
+      userBadgeBg: "gray",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "cyan",
+    },
+  },
+  {
+    id: "nord",
+    name: "Nord",
+    description: "Arctic, north-bluish clean color palette",
+    colors: {
+      background: "black",
+      border: "blue",
+      accent: "blue",
+      userBadgeBg: "gray",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "blue",
+    },
+  },
+  {
+    id: "solarized-dark",
+    name: "Solarized Dark",
+    description: "Deep ocean blue-green with warm accents",
+    colors: {
+      background: "black",
+      border: "cyan",
+      accent: "yellow",
+      userBadgeBg: "gray",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "cyan",
+    },
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyberpunk",
+    description: "High-contrast neon pinks and electric yellows",
+    colors: {
+      background: "black",
+      border: "magenta",
+      accent: "yellow",
+      userBadgeBg: "magenta",
+      nexipiPlanBg: "yellow",
+      nexipiBuildBg: "magenta",
+    },
+  },
+];
