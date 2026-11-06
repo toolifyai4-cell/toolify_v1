@@ -1,5 +1,6 @@
 import type { PolicyDecision, RiskTier, ToolCall, ToolSchema } from "../agent/types.js";
 import { PathGuard, globToRegExp } from "./fs-tools.js";
+import { redactSecrets, hasSecrets, type SECRET_PATTERNS } from "./secret-redaction.js";
 import {
   editFileTool,
   readFileTool,
@@ -159,9 +160,38 @@ export class PolicyEngine {
     return this.sessionGrants.has(tier);
   }
 
+  /** Check if the tool input contains any known secret patterns. */
+  private hasSecretsInInput(input: Record<string, unknown>): boolean {
+    const scanValues = (obj: Record<string, unknown>): string[] => {
+      const hits: string[] = [];
+      for (const [key, value] of Object.entries(obj)) {
+        const strValue = String(value);
+        if (hasSecrets(strValue)) {
+          hits.push(`${key}: *redacted*`);
+        }
+        if (value && typeof value === "object") {
+          hits.push(...scanValues(value as Record<string, unknown>));
+        }
+      }
+      return hits;
+    };
+
+    return scanValues(input).length > 0;
+  }
+
   decide(call: ToolCall): PolicyDecision {
     const tier = TIER_BY_TOOL[call.name] ?? "dangerous";
     const input = (call.input ?? {}) as Record<string, unknown>;
+
+    // Check for secrets in tool inputs before proceeding
+    const hasSecretInput = hasSecretsInInput(input);
+    if (hasSecretInput) {
+      return {
+        allowed: false,
+        tier,
+        reason: `Tool "${call.name}" contains detected secrets — redaction required or provide clean input`,
+      };
+    }
 
     const path = typeof input.path === "string" ? input.path.toLowerCase() : null;
     if (path && this.denyRes.some((re) => re.test(path))) {
@@ -173,6 +203,7 @@ export class PolicyEngine {
     }
 
     if (tier === "read") {
+      // Read-only tools are auto-allowed, but redact any secrets in output later
       return { allowed: true, tier, reason: "read-only tools are auto-allowed" };
     }
 
@@ -207,9 +238,12 @@ export class PolicyEngine {
 
   async execute(guard: PathGuard, call: ToolCall): Promise<string | TerminalResult> {
     const input = (call.input ?? {}) as Record<string, unknown>;
+    let result: string | TerminalResult;
+
     switch (call.name) {
       case "read_file":
-        return readFileTool(guard, input as never);
+        result = await readFileTool(guard, input as never);
+        break;
       case "write_file":
         return writeFileTool(guard, input as never);
       case "edit_file":

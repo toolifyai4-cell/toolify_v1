@@ -902,8 +902,6 @@ export function createAgentLoop(deps: AgentDependencies): AgentLoop {
 }
 
 /** Parse test output to extract failure information. */
-
-/** Parse test output to extract failure information. */
 function parseTestOutput(output: string): { hasFailures: boolean; filePath?: string; errorLine: number } {
   const result: { hasFailures: boolean; filePath?: string; errorLine: number } = {
     hasFailures: false,
@@ -972,24 +970,7 @@ function generateRepair(parsed: { hasFailures: boolean; filePath?: string; error
 }
 
 /** Ensure a Plan-mode blueprint ends with PLAN_MODE_FOOTER exactly once. */
-    provider: deps.provider,
-    toolRegistry: deps.toolRegistry,
-    policy: deps.policy,
-    approval: deps.approval,
-    sessions: deps.sessionRepo,
-    checkpoints: deps.checkpointRepo,
-    verification: deps.verification,
-    eventBus: deps.eventBus,
-    digest: deps.digest,
-    context: deps.context,
-    meter: deps.meter,
-    loopDetector: deps.loopDetector,
-    guard: deps.guard,
-    tools: deps.toolSchemas,
-    maxIterations: deps.maxIterations,
-    mode: deps.mode,
-    modelTimeoutMs: deps.modelTimeoutMs,
-    signal: deps.signal,
-    onStream: deps.onStream,
-  });
+function ensurePlanFooter(text: string): string {
+  if (text.includes(PLAN_MODE_FOOTER)) return text;
+  return text + (text.endsWith("\n") ? "" : "\n") + "\n" + PLAN_MODE_FOOTER;
 }
