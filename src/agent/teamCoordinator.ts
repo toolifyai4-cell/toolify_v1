@@ -47,6 +47,7 @@ export class TeamCoordinator {
       checkpointRepo: CheckpointRepository;
       sessionRepo?: SessionRepository;
       hooks?: HookRegistry;
+      maxSummaryLength?: number; // optional cap for accumulated summary
     }
   ) {
     this.config = config;
@@ -59,7 +60,10 @@ export class TeamCoordinator {
       iteration: 0,
       summary: "",
     };
+    this.maxSummaryLength = deps.maxSummaryLength ?? Infinity;
   }
+
+  private maxSummaryLength: number;
 
   /** Execute one specialist round and return its response + finish flag. */
   private async runSpecialist(
@@ -138,6 +142,12 @@ export class TeamCoordinator {
         // Update payload for possible later inspection
         // Accumulate a human‑readable summary of each specialist's output.
         this.state.summary += ` Specialist "${specialist.name}": ${response.text ?? ""}`;
+// Trim summary if a max length is configured
+        if (this.maxSummaryLength !== Infinity) {
+          this.state.summary = this.state.summary.length > this.maxSummaryLength
+            ? this.state.summary.slice(-this.maxSummaryLength)
+            : this.state.summary;
+        }
 
         this.state.payload = {
           lastPrompt: currentPrompt,
@@ -177,6 +187,7 @@ export function createTeamCoordinator(
     checkpointRepo: CheckpointRepository;
     sessionRepo?: SessionRepository;
     hooks?: HookRegistry;
+    maxSummaryLength?: number; // optional cap for accumulated summary
   }
 ): TeamCoordinator {
   return new TeamCoordinator(config, deps);
