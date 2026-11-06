@@ -19,3 +19,8 @@ export * from "./agent";
 
 // Multi‑agent team coordinator (new in v0.2.0)
 export { TeamCoordinator } from "./teamCoordinator";
+
+// Messaging hooks – Telegram, Slack, Discord (new in v0.3.0)
+export { TelegramMessenger } from "./messaging/telegram";
+export { SlackMessenger } from "./messaging/slack";
+export { DiscordMessenger } from "./messaging/discord";

@@ -28,6 +28,7 @@ export interface TeamState {
   name: string;
   iteration: number;
   lastPrompt?: string;
+  summary: string; // accumulated summary of all specialist outputs so far
   payload?: Record<string, unknown>;
 }
 
@@ -56,6 +57,7 @@ export class TeamCoordinator {
     this.state = {
       name: config.name,
       iteration: 0,
+      summary: "",
     };
   }
 
@@ -101,6 +103,7 @@ export class TeamCoordinator {
       await this.checkpointRepo.save({
         team: this.config.name,
         iteration: this.state.iteration,
+        summary: this.state.summary,
         payload: this.state,
       });
     } catch {
@@ -133,6 +136,9 @@ export class TeamCoordinator {
         );
 
         // Update payload for possible later inspection
+        // Accumulate a human‑readable summary of each specialist's output.
+        this.state.summary += ` Specialist "${specialist.name}": ${response.text ?? ""}`;
+
         this.state.payload = {
           lastPrompt: currentPrompt,
           specialist: specialist.name,
@@ -145,8 +151,8 @@ export class TeamCoordinator {
           return response;
         }
 
-        // Feed the specialist's output back into the next round.
-        currentPrompt = `Previous specialist "${specialist.name}" said: ${response.text ?? ""}. Continue working on the original request.`;
+        // Feed the specialist's output back into the next round, including the accumulated summary.
+        currentPrompt = `Previous specialist "${specialist.name}" said: ${response.text ?? ""}. Summary so far: ${this.state.summary}. Continue working on the original request.`;
       }
     }
 
