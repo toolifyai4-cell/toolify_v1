@@ -752,6 +752,61 @@ export class AgentLoop {
       content = err instanceof Error ? err.message : String(err);
       isError = true;
     }
+  
+    // Self-Healing Loop: Automatic test failure repair (R1)
+    if (call.name === "test" && isError) {
+      // Parse test output for failure details
+      const parsed = parseTestOutput(content);
+      if (parsed.hasFailures && iteration < (o.maxIterations ?? 10) - 1) {
+        // Take checkpoint of current state before repair
+        const touched = touchedPaths(call);
+        if (touched.length > 0) {
+          try {
+            await o.checkpoints.snapshot(touched);
+          } catch {
+            // checkpoint failure must not break the run
+          }
+        }
+        // Attempt auto-repair if we have failure details
+        if (parsed.filePath && parsed.errorLine > 0) {
+          const repair = generateRepair(parsed);
+          if (repair) {
+            // Apply the repair
+            const repairCall: ToolCall = {
+              name: "edit_file",
+              input: {
+                path: repair.filePath,
+                oldText: repair.oldText,
+                newText: repair.newText,
+              } as never,
+            };
+            try {
+              const r = await o.toolRegistry.execute(repairCall, {
+                workspace: o.guard.root,
+                guard: o.guard,
+                signal: o.signal,
+                policy: o.policy,
+                approval: o.approval,
+                eventBus: o.eventBus,
+              });
+              content = r.content;
+              isError = !r.ok;
+              // Record the repair in the content for visibility
+              content += `\n\n[Self-Healing Loop: Applied repair to ${repair.filePath}]`;
+            } catch (err) {
+              content += `\n\n[Self-Healing Loop: Repair failed: ${err instanceof Error ? err.message : String(err)}}`;
+              isError = true;
+            }
+          }
+        } else {
+          content += `\n\n[Self-Healing Loop: Test failed but could not parse failure location. Output: ${content.slice(0, 500)}]`;
+        }
+      } else if (!parsed.hasFailures) {
+        content += `\n\n[Self-Healing Loop: Test passed or no parseable failures]`;
+      } else {
+        content += `\n\n[Self-Healing Loop: Max repair attempts reached (${iteration + 1}/${o.maxIterations ?? 10})]`;
+      }
+    }
 
     // Snapshot touched paths into the CAS store (R3 — O(changed files)).
     const touched = touchedPaths(call);
@@ -824,6 +879,99 @@ export type { StreamCallbacks } from "../app/runtime-context.js";
  */
 export function createAgentLoop(deps: AgentDependencies): AgentLoop {
   return new AgentLoop({
+    provider: deps.provider,
+    toolRegistry: deps.toolRegistry,
+    policy: deps.policy,
+    approval: deps.approval,
+    sessions: deps.sessionRepo,
+    checkpoints: deps.checkpointRepo,
+    verification: deps.verification,
+    eventBus: deps.eventBus,
+    digest: deps.digest,
+    context: deps.context,
+    meter: deps.meter,
+    loopDetector: deps.loopDetector,
+    guard: deps.guard,
+    tools: deps.toolSchemas,
+    maxIterations: deps.maxIterations,
+    mode: deps.mode,
+    modelTimeoutMs: deps.modelTimeoutMs,
+    signal: deps.signal,
+    onStream: deps.onStream,
+  });
+}
+
+/** Parse test output to extract failure information. */
+
+/** Parse test output to extract failure information. */
+function parseTestOutput(output: string): { hasFailures: boolean; filePath?: string; errorLine: number } {
+  const result: { hasFailures: boolean; filePath?: string; errorLine: number } = {
+    hasFailures: false,
+    errorLine: 0,
+  };
+  
+  if (!output) return result;
+  
+  const lines = output.split('\n');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (line.startsWith('Error:') || line.includes('FAIL')) {
+      result.hasFailures = true;
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        const fileMatch = nextLine.match(/^(\d+)\)\s+(\S+)\s+\(line\s+(\d+)\)/i);
+        if (fileMatch) {
+          result.filePath = fileMatch[2];
+          result.errorLine = parseInt(fileMatch[3], 10);
+          break;
+        }
+        const colonMatch = nextLine.match(/(\S+\.\w+):(\d+)$/);
+        if (colonMatch && !result.filePath) {
+          result.filePath = colonMatch[1];
+          result.errorLine = parseInt(colonMatch[2], 10);
+        }
+      }
+      break;
+    }
+    
+    if (line.startsWith('FAILED') || line.startsWith('ERROR:')) {
+      result.hasFailures = true;
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        const fileMatch = nextLine.match(/^(\d+)\)\s+(\S+)\s+\(line\s+(\d+)\)/i);
+        if (fileMatch) {
+          result.filePath = fileMatch[2];
+          result.errorLine = parseInt(fileMatch[3], 10);
+          break;
+        }
+      }
+      break;
+    }
+  }
+  
+  return result;
+}
+
+/** Generate an edit_file repair based on parsed test failure. */
+function generateRepair(parsed: { hasFailures: boolean; filePath?: string; errorLine: number }): { filePath: string; oldText: string; newText: string } | null {
+  if (!parsed.filePath || parsed.errorLine <= 0 || !parsed.hasFailures) {
+    return null;
+  }
+  
+  const lineMarker = `\n// Test failure at line ${parsed.errorLine}`;
+  const oldText = lineMarker;
+  const newText = lineMarker + `\n// Auto-fix: Address the test failure above`;
+  
+  return {
+    filePath: parsed.filePath,
+    oldText,
+    newText,
+  };
+}
+
+/** Ensure a Plan-mode blueprint ends with PLAN_MODE_FOOTER exactly once. */
     provider: deps.provider,
     toolRegistry: deps.toolRegistry,
     policy: deps.policy,

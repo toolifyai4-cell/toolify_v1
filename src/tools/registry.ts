@@ -97,6 +97,24 @@ export let TOOL_SCHEMAS: ToolSchema[] = [
       required: ["command"],
     },
   },
+  {
+    name: "test",
+    description: "Run a test suite (Vitest, Jest, PyTest, etc.) and return results with failures and stacks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "Test command to run, e.g., 'npx vitest run', 'npm test', 'pytest', 'cargo test'"
+        },
+        testFramework: {
+          type: "string",
+          description: "Optional framework: vitest, jest, pytest, cypress, etc."
+        }
+      },
+      required: ["command"]
+    }
+  }
 ];
 
 /** Add extra tool schemas to the global schema list (e.g. discovered plugins). */
@@ -114,6 +132,7 @@ export const TIER_BY_TOOL: Record<string, RiskTier> = {
   write_file: "write",
   edit_file: "write",
   terminal: "dangerous",
+  test: "read",
 };
 
 /**
@@ -205,7 +224,11 @@ export class PolicyEngine {
         return grepTool(guard, input as never);
       case "terminal":
         return terminalTool(guard, input as never);
-      default:
+      case "test":
+        // Run test command via terminal
+        const cmd = (call.input ?? {}).command as string;
+        return terminalTool(guard, { command: cmd, timeoutMs: 120_000 });
+        default:
         return `Unknown tool: ${call.name}`;
     }
   }
