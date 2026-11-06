@@ -1,7 +1,7 @@
 {
-  "name": "toolify",
+  "name": "nexipi",
   "version": "0.1.0",
-  "description": "TOOLIFY - a Cline-class AI coding agent (clean-room CLI-first build)",
+  "description": "Nexipi - a Cline-class AI coding agent (clean-room CLI-first build)",
   "type": "module",
   "engines": {
     "node": ">=20",
@@ -9,7 +9,7 @@
     "vscode": "^1.85.0"
   },
   "bin": {
-    "toolify": "./dist/index.js"
+    "nexipi": "./dist/index.js"
   },
   "main": "./dist/extension.js",
   "contributes": {
@@ -23,7 +23,7 @@
     }
   },
   "scripts": {
-    "toolify": "bun run src/index.ts",
+    "nexipi": "bun run src/index.ts",
     "chat": "bun run src/index.ts chat",
     "dev": "bun --watch run src/index.ts chat",
     "dev:webview": "cd webview-ui && npx vite",
