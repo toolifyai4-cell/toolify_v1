@@ -1,7 +1,5 @@
 {
-  "provider": "openrouter",
-  "model": "openrouter/free",
-  "baseUrl": "https://api.openai.com/v1",
-  "theme": "dracula",
-  "autoUpdate": true
+  "provider": "openai",
+  "model": "gpt-4o",
+  "baseUrl": "https://api.openai.com/v1"
 }
