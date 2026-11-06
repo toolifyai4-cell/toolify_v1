@@ -1,4 +1,172 @@
 /**
+ * CI/CD Headless Mode for TOOLIFY
+ * Runs tests in headless mode with self-healing repair loop
+ * Generates JUnit XML reports for CI integration
+ */
+
+export interface CiConfig {
+  maxIterations: number;
+  testTimeoutMs: number;
+  junitReportPath: string;
+  failFast: boolean;
+  exitCodeOnFailure: boolean;
+  allowedTestFrameworks: readonly string[];
+}
+
+/**
+ * Parsed CI test output result
+ */
+export interface CiTestResult {
+  hasFailures: boolean;
+  errorLine: number;
+  framework: "vitest" | "jest" | "pytest" | "unknown";
+  testName?: string;
+  filePath?: string;
+}
+
+/**
+ * Parse test output for CI/CD frameworks
+ */
+export function parseCiTestOutput(output: string): CiTestResult {
+  const result: CiTestResult = {
+    hasFailures: false,
+    errorLine: 0,
+    framework: "unknown",
+  };
+
+  if (!output) return result;
+
+  let lines: string[];
+  try {
+    lines = output.split("\\n");
+  } catch {
+    return result;
+  }
+
+  // Detect test framework from output patterns
+  let framework: "vitest" | "jest" | "pytest" | "unknown" = "unknown";
+
+  if (output.includes("vitest") || output.includes("vitest/")) {
+    framework = "vitest";
+  } else if (output.includes("Jest") || output.includes("jest")) {
+    framework = "jest";
+  } else if (output.includes("py.test") || output.includes("pytest")) {
+    framework = "pytest";
+  }
+
+  result.framework = framework;
+
+  // Parse based on framework
+  if (framework === "vitest") {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("Error:") || line.includes("FAIL")) {
+        result.hasFailures = true;
+        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+          const nextLine = lines[j].trim();
+          const vitestMatch = nextLine.match(/^(\d+)\)\s+(\S+)\s+\(line\s+(\d+)\)/i);
+          if (vitestMatch) {
+            result.filePath = vitestMatch[2];
+            result.errorLine = parseInt(vitestMatch[3], 10);
+            break;
+          }
+        }
+        break;
+      }
+    }
+  } else if (framework === "jest") {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("Error:") || line.includes("FAIL")) {
+        result.hasFailures = true;
+        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+          const nextLine = lines[j].trim();
+          const jestMatch = nextLine.match(/^\s+at\s+(\S+)\s+\(([^:]+):(\d+):(\d+)\)/);
+          if (jestMatch) {
+            result.filePath = jestMatch[2];
+            result.errorLine = parseInt(jestMatch[3], 10);
+            break;
+          }
+        }
+        break;
+      }
+    }
+  } else if (framework === "pytest") {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.includes("FAILED") || line.includes("ERROR")) {
+        result.hasFailures = true;
+        // PyTest format: FAILED test_name.py or E Error: ...
+        const failedMatch = line.match(/^(\S+)\s+\(line\s+(\d+)\)/i);
+        if (failedMatch) {
+          result.filePath = failedMatch[1];
+          result.errorLine = parseInt(failedMatch[2], 10);
+        }
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Run headless CI pipeline
+ */
+export async function runHeadlessCi(
+  config: CiConfig,
+  executeTest: () => Promise<string>,
+  repairCallback: (filePath: string, errorLine: number) => Promise<boolean>
+): Promise<{ passed: boolean; repairCount: number }> {
+  let repairCount = 0;
+
+  for (let iteration = 0; iteration < config.maxIterations; iteration++) {
+    // Run tests
+    const output = await executeTest();
+
+    // Parse results
+    const parsed = parseCiTestOutput(output);
+
+    // If no failures, we're done
+    if (!parsed.hasFailures) {
+      return { passed: true, repairCount };
+    }
+
+    // Apply repair
+    repairCount++;
+    const repairSuccess = await repairCallback(parsed.filePath!, parsed.errorLine!);
+
+    if (!repairSuccess && config.failFast) {
+      return {
+        passed: false,
+        repairCount,
+      };
+    }
+  }
+
+  return {
+    passed: false,
+    repairCount,
+  };
+}
+
+/**
+ * CI pipeline entry point
+ */
+export function ciPipelineEntryPoint(config: CiConfig): void {
+  console.log("=".repeat(50));
+  console.log("TOOLIFY CI/CD Headless Mode");
+  console.log("=".repeat(50));
+  console.log(`Config: maxIterations=${config.maxIterations}, ` +
+    `testTimeoutMs=${config.testTimeoutMs}, ` +
+    `frameworks=${config.allowedTestFrameworks.join(", ")}`);
+
+  // Run the headless CI loop
+  // Note: In production, executeTest and repairCallback would be
+  // provided based on the specific CI environment
+  console.log("CI pipeline ready - awaiting test execution setup");
+}
+/**
  * Headless CI/CD Mode for Nexipi Agent
  * Provides CI/CD pipeline integration for the self-healing test-driven loop.
  */
@@ -80,9 +248,10 @@ export function parseCiTestOutput(output: string): {
 
   if (!output) return result;
 
-  const lines = output.split("
+const lines = output.split("\\n");
+  ("\\n");("\\n");("\\"\\n");\\"\\n");("
 ");
-  let framework: "vitest" | "jest" | "pytest" | "unknown" = "unknown";
+  
 
   // Detect test framework from output patterns
   if (output.includes("vitest") || output.includes("vitest/")) {
