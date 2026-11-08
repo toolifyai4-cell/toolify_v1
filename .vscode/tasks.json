@@ -6,16 +6,7 @@
       "type": "shell",
       "command": "npm run dev:webview",
       "isBackground": true,
-      "problemMatcher": {
-        "owner": "vite",
-        "pattern": {
-          "backend": {
-            "output": "$tsc",
-            "file": "(.*)",
-            "line": "(.*)"
-          }
-        }
-      },
+      "problemMatcher": ["$esbuild"],
       "presentation": {
         "group": "build"
       }
