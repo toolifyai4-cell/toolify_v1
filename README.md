@@ -4,7 +4,7 @@
 
 **AI coding agent for VS Code — built into your editor.**
 
-Plan, build, inspect, and verify code from inside VS Code with a webview chat interface running in the Explorer sidebar.
+Plan, build, inspect, and verify code from inside VS Code with a webview chat interface.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -18,7 +18,7 @@ Plan, build, inspect, and verify code from inside VS Code with a webview chat in
 
 ## ✨ What is NEXIPI?
 
-**NEXIPI** is an AI coding agent that works directly inside VS Code. Describe what you want in natural language, and NEXIPI can inspect your project, propose a plan, make changes, run commands, execute tests, and verify the result — all from a chat panel in your Explorer sidebar.
+**NEXIPI** is an AI coding agent that works directly inside VS Code. Describe what you want in natural language, and NEXIPI can inspect your project, propose a plan, make changes, run commands, execute tests, and verify the result — all from a webview chat panel.
 
 It is designed for developers who want an agent that is:
 
@@ -76,10 +76,7 @@ In **Build mode**, it can apply changes, run commands, and verify results.
 
 ### 💬 Webview chat interface
 
-The TOOLIFY panel lives in the VS Code Explorer sidebar (`toolifyChatView`). The chat view streams agent responses, tool calls, and status updates live via gRPC between the extension host and the webview UI.
-
-- Model: gpt-5 | Tokens: 6.4K | Cost: $0.0162
-- Plan [ON] | Build [OFF] | Auto-approve: OFF
+NEXIPI renders a React-based chat interface inside a VS Code webview. Agent responses, tool calls, and status updates stream live via gRPC between the extension host and the webview UI.
 
 ### 🛡️ Safety and approvals
 
@@ -132,30 +129,19 @@ NEXIPI supports a provider abstraction so you can choose the model that fits you
 - VS Code 1.85 or later
 - An API key for at least one supported provider
 
-### Option 1: Run from source (development)
+### Install from source
 
 ```bash
 git clone https://github.com/toolifyai4-cell/toolify_v1.git
 cd toolify_v1
 npm install
 npm run build
-npm run launch
 ```
 
-`npm run launch` opens VS Code with the extension loaded in a development host. The TOOLIFY view appears in the Explorer sidebar automatically.
-
-### Option 2: Use the CLI
-
-The project also includes a terminal interface:
+Then open VS Code with the extension loaded:
 
 ```bash
-npm run dev
-```
-
-Then type a task:
-
-```
-Add input validation to the signup form
+npm run launch
 ```
 
 ---
@@ -194,23 +180,11 @@ Use environment variables for API keys. Avoid committing secrets to your reposit
 
 1. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Run `Toolify: Open Chat`.
-3. The TOOLIFY panel opens in the Explorer sidebar.
+3. The TOOLIFY webview panel opens.
 4. Choose a model.
 5. Describe your task.
 6. Review the plan.
 7. Approve Build mode when ready.
-
-### CLI
-
-```bash
-npm run dev
-```
-
-Then type a task:
-
-```
-Add input validation to the signup form
-```
 
 ### Example prompts
 
@@ -229,15 +203,14 @@ Explain how authentication works in this project
 
 ```mermaid
 flowchart TD
-    A[VS Code Explorer Sidebar<br/>TOOLIFY webview chat panel] --> B[Extension Host<br/>src/extension.ts · gRPC router · session manager]
-    B --> C[Webview Provider<br/>state snapshots · streaming chunks · HTML injection]
-    C --> D[Agent Loop<br/>plan/build modes · context · events]
-    D --> E[Model Provider<br/>Anthropic · OpenAI-compatible · local · mock]
-    E --> F[Tools<br/>file ops · search · terminal · grep · glob]
-    F -->|Tool Results| D
-    B --> G[Permissions & Safety<br/>approvals · checkpoints · path guards]
-    G --> H[User Workspace<br/>Files · Git · Commands · Tests · Builds]
-    H --> F
+    A[VS Code Extension Host<br/>src/extension.ts · gRPC router · session manager] --> B[Webview Provider<br/>state snapshots · streaming chunks · HTML injection]
+    B --> C[Agent Loop<br/>plan/build modes · context · events]
+    C --> D[Model Provider<br/>Anthropic · OpenAI-compatible · local · mock]
+    D --> E[Tools<br/>file ops · search · terminal · grep · glob]
+    E -->|Tool Results| C
+    A --> F[Permissions & Safety<br/>approvals · checkpoints · path guards]
+    F --> G[User Workspace<br/>Files · Git · Commands · Tests · Builds]
+    G --> E
 ```
 
 ### Core modules
@@ -266,19 +239,19 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant W as VS Code Webview
+    participant W as Webview UI
     participant E as Extension Host
     participant L as Agent Loop
     participant T as Tool Runtime
     participant WS as Workspace
-    U->>W: Describe task in TOOLIFY panel
+    U->>W: Describe task
     W->>E: gRPC request (ChatService)
     E->>L: Create/start agent session
     L->>T: Inspect files / search
     T->>WS: Read-only queries
     WS-->>T: Results
     T-->>L: Context
-    L-->>U: Proposed plan (streamed to webview)
+    L-->>W: Proposed plan (streamed to webview)
     U->>W: Approve Build mode
     W->>E: gRPC request (approve)
     E->>L: Apply changes
@@ -286,7 +259,7 @@ sequenceDiagram
     T->>WS: Mutations / command output
     WS-->>T: Output
     T-->>L: Verified
-    L-->>U: Summary + diff
+    L-->>W: Summary + diff
 ```
 
 ---
