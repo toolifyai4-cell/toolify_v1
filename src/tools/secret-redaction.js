@@ -64,14 +64,14 @@ export function redactSecrets(input) {
  * contains a detected secret. Returns an array of `key: *redacted*` strings.
  */
 export function scanValues(obj) {
-  const hits: string[] = [];
+  const hits = [];
   for (const [key, value] of Object.entries(obj)) {
     const strValue = String(value);
     if (hasSecrets(strValue)) {
       hits.push(`${key}: *redacted*`);
     }
     if (value && typeof value === "object") {
-      hits.push(...scanValues(value as Record<string, unknown>));
+      hits.push(...scanValues(value));
     }
   }
   return hits;

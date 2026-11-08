@@ -968,9 +968,3 @@ function generateRepair(parsed: { hasFailures: boolean; filePath?: string; error
     newText,
   };
 }
-
-/** Ensure a Plan-mode blueprint ends with PLAN_MODE_FOOTER exactly once. */
-function ensurePlanFooter(text: string): string {
-  if (text.includes(PLAN_MODE_FOOTER)) return text;
-  return text + (text.endsWith("\n") ? "" : "\n") + "\n" + PLAN_MODE_FOOTER;
-}
