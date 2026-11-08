@@ -148,10 +148,10 @@ export const BOTTOM_PANEL_HEIGHT = 7;
 
 
 /** Messages scrolled per PgUp / PgDn press. */
-export const SCROLL_STEP = 3;
+export const SCROLL_STEP = 0;
 
 /** Lines scrolled per touchpad / mouse-wheel tick. */
-export const WHEEL_STEP = 3;
+export const WHEEL_STEP = 0;
 
 /**
  * Estimate the rendered height of one message, in terminal rows.
@@ -485,7 +485,6 @@ export const ChatUI = (props: ChatUIProps) => {
   /** Selection range for text copying: { start, end } character positions in the visible message content */
   const [selection, setSelection] = useState<SelectionRange>({ start: 0, end: 0 });
   /** How many messages the transcript window is scrolled back from the newest. */
-  const [scrollBack, setScrollBack] = useState(0);
   const slashQuery = slashOpen && inputValue.startsWith("/") ? inputValue.slice(1) : "";
   const slashCommands = useMemo(
     () => (slashOpen ? filterSlashCommands(slashQuery) : []),
@@ -501,12 +500,6 @@ export const ChatUI = (props: ChatUIProps) => {
     if (slashOpen) setSlashIndex((i) => Math.min(i, Math.max(slashCommands.length - 1, 0)));
   }, [slashOpen, slashCommands.length]);
 
-  // A cleared transcript must not keep a stale scroll position.
-  useEffect(() => {
-    if (props.messages.length === 0 && scrollBack !== 0) setScrollBack(0);
-  }, [props.messages.length, scrollBack]);
-
-  // Auto-scroll to bottom when the agent starts generating or new messages arrive.
   const prevIsRunningRef = useRef(props.isRunning);
   useEffect(() => {
     if (props.isRunning && !prevIsRunningRef.current) {
@@ -516,12 +509,6 @@ export const ChatUI = (props: ChatUIProps) => {
   }, [props.isRunning]);
 
   const prevMsgCountRef = useRef(props.messages.length);
-  useEffect(() => {
-    if (props.messages.length !== prevMsgCountRef.current) {
-      prevMsgCountRef.current = props.messages.length;
-      setScrollBack(0);
-    }
-  }, [props.messages.length]);
 
     // Mouse / touchpad wheel scrolling via ANSI mouse tracking sequences.
   useEffect(() => {

@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "model": "minimax/minimax-m3.1-flash",
+  "model": "xingchen-agi/xing4.0-29b-a4b:free",
   "baseUrl": "https://api.openai.com/v1",
   "theme": "toolify-dark",
   "autoUpdate": true
