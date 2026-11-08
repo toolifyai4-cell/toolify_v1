@@ -2,9 +2,9 @@
 
 # ⚡ NEXIPI
 
-**An AI-powered coding agent for your terminal and workspace.**
+**AI coding agent for VS Code — built into your editor.**
 
-Plan, build, inspect, and verify code with a modern terminal-native agent interface.
+Plan, build, inspect, and verify code from inside VS Code with a webview chat interface running in the Explorer sidebar.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -18,15 +18,14 @@ Plan, build, inspect, and verify code with a modern terminal-native agent interf
 
 ## ✨ What is NEXIPI?
 
-**NEXIPI** is an AI coding agent that works directly inside your development workspace.  
-Describe what you want in natural language, and NEXIPI can inspect your project, propose a plan, make changes, run commands, execute tests, and verify the result.
+**NEXIPI** is an AI coding agent that works directly inside VS Code. Describe what you want in natural language, and NEXIPI can inspect your project, propose a plan, make changes, run commands, execute tests, and verify the result — all from a chat panel in your Explorer sidebar.
 
 It is designed for developers who want an agent that is:
 
-- **Terminal-native** — a fast, keyboard-first interface.
+- **Editor-native** — runs as a VS Code extension webview, no terminal switching required.
 - **Workspace-aware** — understands files, Git state, commands, and project context.
 - **Safe by default** — Plan mode prevents accidental changes.
-- **Transparent** — every tool call, file edit, command, and result is visible.
+- **Transparent** — every tool call, file edit, command, and result is visible in the chat panel.
 - **Model-flexible** — works with Anthropic, OpenAI-compatible APIs, and local models.
 - **Web-aware** — can search the web for current information.
 
@@ -38,7 +37,7 @@ It is designed for developers who want an agent that is:
 
 Give NEXIPI a high-level task:
 
-```text
+```
 Add dark mode support to the settings page
 ```
 
@@ -75,38 +74,12 @@ NEXIPI separates thinking from execution.
 In **Plan mode**, NEXIPI can read and search your workspace but will not modify files.  
 In **Build mode**, it can apply changes, run commands, and verify results.
 
-### 📜 Scrollable chat interface
+### 💬 Webview chat interface
 
-The terminal UI keeps the important controls fixed while letting you review the full session:
+The TOOLIFY panel lives in the VS Code Explorer sidebar (`toolifyChatView`). The chat view streams agent responses, tool calls, and status updates live via gRPC between the extension host and the webview UI.
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ YOU                                                          │
-│   Fix the login validation bug                               │
-│                                                              │
-│ NEXIPI                                                       │
-│   I found an issue in validateToken(). Expired tokens        │
-│   are accepted because the expiry check runs too late.       │
-│                                                              │
-│ TOOL read_file src/auth/login.ts — done                      │
-│ TOOL search_code("validateToken") — done                     │
-│                                                              │
-│ PLAN                                                         │
-│   1. Move expiry validation earlier                          │
-│   2. Add a regression test                                   │
-│   3. Run the auth test suite                                 │
-│                                                              │
-│ SYSTEM                                                       │
-│   Switch to Build mode and implement this plan?              │
-└──────────────────────────────────────────────────────────────┘
-
-╭──────────────────────────────────────────────────────────────╮
-│ You │ Type a message or / for commands...                    │
-╰──────────────────────────────────────────────────────────────╯
-
- Model: gpt-5 | Tokens: 6.4K | Cost: $0.0162
- Plan [ON] | Build [OFF] | Auto-approve: OFF
-```
+- Model: gpt-5 | Tokens: 6.4K | Cost: $0.0162
+- Plan [ON] | Build [OFF] | Auto-approve: OFF
 
 ### 🛡️ Safety and approvals
 
@@ -156,33 +129,33 @@ NEXIPI supports a provider abstraction so you can choose the model that fits you
 
 - Node.js 18 or later
 - npm
-- VS Code 1.80 or later, if using the extension
+- VS Code 1.85 or later
 - An API key for at least one supported provider
 
-### Clone and install
+### Option 1: Run from source (development)
 
 ```bash
 git clone https://github.com/toolifyai4-cell/toolify_v1.git
 cd toolify_v1
 npm install
-```
-
-### Build
-
-```bash
 npm run build
+npm run launch
 ```
 
-### Run tests
+`npm run launch` opens VS Code with the extension loaded in a development host. The TOOLIFY view appears in the Explorer sidebar automatically.
+
+### Option 2: Use the CLI
+
+The project also includes a terminal interface:
 
 ```bash
-npm test
+npm run dev
 ```
 
-### Package the VS Code extension
+Then type a task:
 
-```bash
-vsce package
+```
+Add input validation to the signup form
 ```
 
 ---
@@ -219,12 +192,13 @@ Use environment variables for API keys. Avoid committing secrets to your reposit
 
 ### VS Code extension
 
-1. Open the Command Palette.
+1. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Run `Toolify: Open Chat`.
-3. Choose a model.
-4. Describe your task.
-5. Review the plan.
-6. Approve Build mode when ready.
+3. The TOOLIFY panel opens in the Explorer sidebar.
+4. Choose a model.
+5. Describe your task.
+6. Review the plan.
+7. Approve Build mode when ready.
 
 ### CLI
 
@@ -234,13 +208,13 @@ npm run dev
 
 Then type a task:
 
-```text
+```
 Add input validation to the signup form
 ```
 
 ### Example prompts
 
-```text
+```
 Add a dark mode toggle to the settings page
 Write unit tests for the auth service
 Refactor the user repository to use the new database client
@@ -255,13 +229,13 @@ Explain how authentication works in this project
 
 ```mermaid
 flowchart TD
-    A[Terminal / VS Code UI<br/>Scrollable chat · Tool logs · Status bar] --> B[Agent Controller<br/>Sessions · Modes · Events · Cancellation]
-    B --> C[Agent Runtime]
-    C --> D[Context Engine]
-    D --> E[Model Provider]
-    E --> F[Tools]
+    A[VS Code Explorer Sidebar<br/>TOOLIFY webview chat panel] --> B[Extension Host<br/>src/extension.ts · gRPC router · session manager]
+    B --> C[Webview Provider<br/>state snapshots · streaming chunks · HTML injection]
+    C --> D[Agent Loop<br/>plan/build modes · context · events]
+    D --> E[Model Provider<br/>Anthropic · OpenAI-compatible · local · mock]
+    E --> F[Tools<br/>file ops · search · terminal · grep · glob]
     F -->|Tool Results| D
-    C --> G[Permissions & Sandbox<br/>Path guards · Approvals · Checkpoints]
+    B --> G[Permissions & Safety<br/>approvals · checkpoints · path guards]
     G --> H[User Workspace<br/>Files · Git · Commands · Tests · Builds]
     H --> F
 ```
@@ -270,14 +244,19 @@ flowchart TD
 
 | Module | Responsibility |
 |---|---|
+| `src/extension.ts` | Extension activation, webview view registration, gRPC service wiring |
+| `src/extension/agent-session-manager.ts` | Long-running agent session lifecycle per session ID |
+| `src/extension/auth-integration.ts` | VS Code native auth + session store bridge |
+| `src/core/webview/WebviewProvider.ts` | Abstract gRPC routing + webview HTML injection |
+| `src/hosts/vscode/VscodeWebviewProvider.ts` | Concrete VS Code webview view provider |
 | `src/agent/` | Agent loop, context management, events, loop detection |
 | `src/tools/` | File operations, search, terminal, grep, glob, task tools |
 | `src/models/` | Model registry, pricing, quota, verification |
 | `src/providers/` | Streaming providers and provider abstractions |
 | `src/persistence/` | Sessions, checkpoints, and storage |
 | `src/safety/` | Approval service for risky operations |
-| `src/components/` | Terminal UI components |
-| `webview-ui/` | React + Vite chat interface |
+| `src/core/controller/` | Chat, config, auth, terminal controllers |
+| `webview-ui/` | React + Vite chat interface (ChatView, Settings, History, Account) |
 | `src/verify/` | Verification gate for builds and tests |
 
 ---
@@ -287,33 +266,56 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant P as Plan Mode
-    participant B as Build Mode
+    participant W as VS Code Webview
+    participant E as Extension Host
+    participant L as Agent Loop
     participant T as Tool Runtime
-    participant W as Workspace
-    U->>P: Describe task
-    P->>T: Inspect files / search
-    T->>W: Read-only queries
-    W-->>T: Results
-    T-->>P: Context
-    P-->>U: Proposed plan
-    U->>B: Approve
-    B->>T: Apply changes
-    T->>W: Write / run commands
-    W-->>T: Output
-    T-->>B: Verified
-    B-->>U: Summary + diff
+    participant WS as Workspace
+    U->>W: Describe task in TOOLIFY panel
+    W->>E: gRPC request (ChatService)
+    E->>L: Create/start agent session
+    L->>T: Inspect files / search
+    T->>WS: Read-only queries
+    WS-->>T: Results
+    T-->>L: Context
+    L-->>U: Proposed plan (streamed to webview)
+    U->>W: Approve Build mode
+    W->>E: gRPC request (approve)
+    E->>L: Apply changes
+    L->>T: Write / run commands
+    T->>WS: Mutations / command output
+    WS-->>T: Output
+    T-->>L: Verified
+    L-->>U: Summary + diff
 ```
 
 ---
 
 ## 🧪 Development
 
-### Watch mode
+### Build the extension and webview UI
 
 ```bash
-npm run watch
+npm run build
 ```
+
+This bundles `src/extension.ts` into `dist/extension.js` and builds the React webview UI into `dist/webview-ui/`.
+
+### Watch the webview UI during development
+
+```bash
+npm run dev:webview
+```
+
+Runs Vite dev server at `localhost:5173` for fast webview iteration.
+
+### Launch VS Code with the extension
+
+```bash
+npm run launch
+```
+
+Opens VS Code with `--extensionDevelopmentPath=.` so you can test the extension live. Press `F5` inside VS Code for the same effect.
 
 ### Run tests
 
@@ -321,21 +323,17 @@ npm run watch
 npm test
 ```
 
-### Run one test file
+### Typecheck
 
 ```bash
-npm test -- tests/agent-loop.test.ts
+npm run typecheck
 ```
 
-### Coverage
+### Typecheck webview UI
 
 ```bash
-npm run test:coverage
+npm run typecheck:webview
 ```
-
-### Launch VS Code development host
-
-Press `F5` in VS Code to launch the extension in a development host.
 
 ---
 
@@ -352,11 +350,9 @@ Contributions are welcome — and contributors will be <span style="color:#22c55
 5. Run:
 
 ```bash
-npm run lint
+npm run typecheck
 npm test
 ```
-
-6. Open a pull request.
 
 6. Open a pull request.
 
@@ -364,7 +360,7 @@ npm test
 <summary><b>📋 Contribution checklist</b></summary>
 
 - [ ] Code compiles (`npm run build`)
-- [ ] Lint passes (`npm run lint`)
+- [ ] Typecheck passes (`npm run typecheck`)
 - [ ] Tests pass (`npm test`)
 - [ ] New behavior is documented
 - [ ] No secrets committed
