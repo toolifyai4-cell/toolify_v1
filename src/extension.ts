@@ -1,8 +1,8 @@
 /**
- * VS Code extension entry point for TOOLIFY.
+ * VS Code extension entry point for NEXIPI.
  *
- * Registers the `toolifyChatView` webview view (contributed in package.json
- * under `contributes.views.explorer`) and wires up the gRPC message router.
+ * Registers the `nexipiChatView` webview view (contributed in package.json
+ * under `contributes.views.nexipi-activitybar`) and wires up the gRPC message router.
  *
  * The extension host never renders UI directly — all rendering happens in
  * the isolated webview. The host owns the agent lifecycle, the gRPC service
@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const provider = new VscodeWebviewProvider(extensionUri, context)
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
-			"toolifyChatView",
+			"nexipiChatView",
 			provider,
 		),
 	)
@@ -36,14 +36,14 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(agentSessionManager)
 	context.subscriptions.push({ dispose: () => provider.dispose() })
 
-	// Auto-focus the Explorer sidebar and reveal the TOOLIFY view.
+	// Auto-focus the Explorer sidebar and reveal the NEXIPI view.
 	// The small delay ensures VS Code has registered the view first.
 	setTimeout(() => {
 		Promise.resolve(
 			vscode.commands.executeCommand("workbench.view.explorer"),
 		).catch(() => {})
 		Promise.resolve(
-			vscode.commands.executeCommand("workbench.action.showView", "toolifyChatView"),
+			vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView"),
 		).catch(() => {})
 	}, 500)
 }

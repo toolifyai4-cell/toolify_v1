@@ -2,7 +2,7 @@
  * VscodeWebviewProvider — concrete WebviewViewProvider for VS Code.
  *
  * Implements the `vscode.WebviewViewProvider` interface so VS Code can
- * embed the TOOLIFY UI inside its sidebar (the `toolifyChatView` view
+ * embed the NEXIPI UI inside its sidebar (the `nexipiChatView` view
  * contributed in package.json).
  *
  * All gRPC service handlers are registered on the base `WebviewProvider`.

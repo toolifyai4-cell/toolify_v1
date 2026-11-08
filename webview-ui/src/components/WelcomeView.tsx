@@ -11,12 +11,12 @@ export function WelcomeView({ onGetStarted }: {
 	return (
 		<div className="welcome-container">
 			<div className="welcome-content">
-				<h1 className="welcome-title">TOOLIFY</h1>
+				<h1 className="welcome-title">NEXIPI</h1>
 				<p className="welcome-subtitle">
-					Your AI coding agent — powered by the terminal.
+					Your AI coding agent — powered by the code.
 				</p>
 				<div className="welcome-features">
-					<div className="feature">🔧 Full terminal & shell access</div>
+					<div className="feature">🔧 Full code & shell access</div>
 					<div className="feature">📂 File reading, editing & creation</div>
 					<div className="feature">🔍 Code search & navigation</div>
 					<div className="feature">🔐 Secure credential management</div>

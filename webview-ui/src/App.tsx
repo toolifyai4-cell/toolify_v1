@@ -34,12 +34,12 @@ export function App(): React.ReactElement {
 	} = useExtensionState()
 
 	if (!isReady) {
-		return <div className="loading-overlay">Connecting to TOOLIFY…</div>
+		return <div className="loading-overlay">Connecting to NEXIPI…</div>
 	}
 
 	if (showWelcome) {
 		return <WelcomeView onGetStarted={() => {
-			startNewTask("Hello! You are TOOLIFY, a coding agent. Explain what you do and help me get started.", "act")
+			startNewTask("Hello! You are NEXIPI, a coding agent. Explain what you do and help me get started.", "act")
 		}} />
 	}
 

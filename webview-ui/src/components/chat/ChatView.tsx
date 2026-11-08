@@ -101,7 +101,7 @@ export function ChatView(): React.ReactElement {
 			<div className="chat-transcript">
 				{grouped.length === 0 && !isRunning && (
 					<div className="empty-state">
-						Send a message to start chatting with TOOLIFY.
+						Send a message to start chatting with NEXIPI.
 					</div>
 				)}
 
@@ -110,7 +110,7 @@ export function ChatView(): React.ReactElement {
 				{isRunning && (
 					<div className="thinking-indicator">
 						<span className="thinking-dot" />
-						TOOLIFY is thinking…
+						NEXIPI is thinking…
 					</div>
 				)}
 
@@ -122,7 +122,7 @@ export function ChatView(): React.ReactElement {
 				<textarea
 					ref={inputRef}
 					className="chat-input"
-					placeholder={isRunning ? "TOOLIFY is thinking…" : "Ask TOOLIFY anything…"}
+					placeholder={isRunning ? "NEXIPI is thinking…" : "Ask NEXIPI anything…"}
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
 					onCompositionStart={() => setIsComposing(true)}

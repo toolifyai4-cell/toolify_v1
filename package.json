@@ -10,11 +10,20 @@
   },
   "main": "./dist/extension.js",
   "contributes": {
-    "views": {
-      "explorer": [
+    "viewsContainers": {
+      "activitybar": [
         {
-          "id": "toolifyChatView",
-          "name": "TOOLIFY"
+          "id": "nexipi-activitybar",
+          "title": "Nexipi AI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "nexipi-activitybar": [
+        {
+          "id": "nexipiChatView",
+          "name": "Nexipi AI"
         }
       ]
     }
