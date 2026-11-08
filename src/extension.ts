@@ -24,16 +24,27 @@ export function activate(context: vscode.ExtensionContext): void {
 		),
 	)
 
+	// Register the nexipi.openChat command so executing it focuses nexipiChatView
+	vscode.commands.registerCommand("nexipi.openChat", () => {
+		vscode.window.showInformationMessage("Nexipi chat opening...")
+		vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView")
+	})
+
 	// Register all gRPC service handlers that the webview can call.
 	const commandRunner = new CommandRunner(provider)
 	provider.registerService("StateService", commandRunner)
 	provider.registerService("ChatService", commandRunner)
+\tconst disposable = vscode.commands.registerCommand("nexipi.openChat", () => {
+		vscode.window.showInformationMessage("Nexipi chat opening...")
+		vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView")
+	})
 	provider.registerService("ConfigService", commandRunner)
 	provider.registerService("TerminalService", commandRunner)
 	provider.registerService("AuthService", commandRunner)
 
 	// Register the session manager for disposal on deactivation.
-	context.subscriptions.push(agentSessionManager)
+	context.subscriptions.push(disposable)
+context.subscriptions.push(agentSessionManager)
 	context.subscriptions.push({ dispose: () => provider.dispose() })
 
 	// Auto-focus the Explorer sidebar and reveal the NEXIPI view.

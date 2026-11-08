@@ -8,8 +8,10 @@
     "bun": ">=1.0.0",
     "vscode": "^1.85.0"
   },
+  "activationEvents": ["*"],
   "main": "./dist/extension.js",
   "contributes": {
+    "activationEvents": ["*"],
     "viewsContainers": {
       "activitybar": [
         {
@@ -26,7 +28,13 @@
           "name": "Nexipi AI"
         }
       ]
-    }
+    },
+    "commands": [
+      {
+        "command": "nexipi.openChat",
+        "title": "Nexipi: Open Chat"
+      }
+    ]
   },
   "scripts": {
     "dev:webview": "cd webview-ui && npx vite",
