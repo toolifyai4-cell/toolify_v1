@@ -11,6 +11,7 @@
 import * as vscode from "vscode"
 import { VscodeWebviewProvider } from "./hosts/vscode/VscodeWebviewProvider.js"
 import { CommandRunner } from "./core/controller/CommandRunner.js"
+import { agentSessionManager } from "./extension/agent-session-manager.js"
 
 export function activate(context: vscode.ExtensionContext): void {
 	const { extensionUri } = context
@@ -31,6 +32,8 @@ export function activate(context: vscode.ExtensionContext): void {
 	provider.registerService("TerminalService", commandRunner)
 	provider.registerService("AuthService", commandRunner)
 
+	// Register the session manager for disposal on deactivation.
+	context.subscriptions.push(agentSessionManager)
 	context.subscriptions.push({ dispose: () => provider.dispose() })
 
 	// Auto-focus the Explorer sidebar and reveal the TOOLIFY view.

@@ -5,6 +5,7 @@
  * next iteration. Otherwise it starts a new task.
  */
 import type { VscodeWebviewProvider } from "../../../hosts/vscode/VscodeWebviewProvider.js"
+import type { AgentSessionManager } from "../../../extension/agent-session-manager.js"
 import { enqueueAgentEvent } from "../state/subscribeToState.js"
 
 interface SendMessageRequest {
@@ -16,6 +17,7 @@ export async function sendMessage(
 	message: any,
 	_signal: AbortSignal,
 	_provider: VscodeWebviewProvider,
+	_sessionManager: AgentSessionManager,
 ): Promise<{ received: boolean }> {
 	const req = message as SendMessageRequest
 

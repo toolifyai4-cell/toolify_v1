@@ -21,9 +21,9 @@ import { getProviders } from "./config/getProviders.js"
 import { runTerminalCommand } from "./terminal/runCommand.js"
 import { getAuthStatus } from "./auth/getAuthStatus.js"
 import { logoutUser } from "./auth/logoutUser.js"
+import { agentSessionManager } from "../../extension/agent-session-manager.js"
 
 export class CommandRunner implements GrpcService {
-	private activeControllers = new Map<string, AbortController>()
 
 	constructor(private readonly provider: VscodeWebviewProvider) {}
 
@@ -37,7 +37,7 @@ export class CommandRunner implements GrpcService {
 		message: any,
 		_streaming: boolean,
 		signal: AbortSignal,
-		): Promise<any> | AsyncIterable<any> {
+	): Promise<any> | AsyncIterable<any> {
 		switch (method) {
 			// --- StateService ---
 			case "subscribeToState":
@@ -45,11 +45,11 @@ export class CommandRunner implements GrpcService {
 
 			// --- ChatService ---
 			case "startNewTask":
-				return startNewTask(message, signal, this.provider)
+				return startNewTask(message, signal, this.provider, agentSessionManager)
 			case "sendMessage":
-				return sendMessage(message, signal, this.provider)
+				return sendMessage(message, signal, this.provider, agentSessionManager)
 			case "cancelTask":
-				return cancelTask(this.provider)
+				return cancelTask(this.provider, agentSessionManager, message)
 			case "clearHistory":
 				return clearHistory(message, signal, this.provider)
 
@@ -76,10 +76,6 @@ export class CommandRunner implements GrpcService {
 
 	/** Abort a streaming request by its request_id. */
 	cancel(requestId: string): void {
-		const ctrl = this.activeControllers.get(requestId)
-		if (ctrl) {
-			ctrl.abort()
-			this.activeControllers.delete(requestId)
-		}
+		agentSessionManager.cancelSession(requestId)
 	}
 }
