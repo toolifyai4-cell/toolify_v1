@@ -28,22 +28,25 @@ export class VscodeWebviewProvider extends WebviewProvider {
 	/** VS Code calls this when the view is first rendered. */
 	resolveWebviewView(
 		webviewView: vscode.WebviewView,
-			_options: vscode.WebviewViewResolveContext,
+		_options: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken,
 	): void {
 		this._webview = webviewView.webview
 
 		this._webview.options = {
 			enableScripts: true,
-			...this._webview.options,
+			localResourceRoots: [
+				vscode.Uri.joinPath(this.context.extensionUri, "dist"),
+				vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui"),
+			],
 		}
 
 		// Build HTML with resolved asset URIs.
-				const jsUri = this._webview.asWebviewUri(
-			this.extensionUri.with({ path: "dist/webview-ui/assets/index.js" }),
+		const jsUri = this._webview.asWebviewUri(
+			vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui", "assets", "index.js"),
 		)
 		const cssUri = this._webview.asWebviewUri(
-			this.extensionUri.with({ path: "dist/webview-ui/assets/index.css" }),
+			vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui", "assets", "index.css"),
 		)
 
 		this._webview.html = this.getHtml(jsUri, cssUri)
