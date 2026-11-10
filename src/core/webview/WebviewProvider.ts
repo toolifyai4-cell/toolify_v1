@@ -153,6 +153,16 @@ export abstract class WebviewProvider {
 			? `default-src 'none'; img-src https: data: http://localhost:5173; style-src 'unsafe-inline' http://localhost:5173; font-src https: data: http://localhost:5173; script-src 'unsafe-eval' 'unsafe-inline' http://localhost:5173; connect-src http://localhost:5173 ws://localhost:5173 https:;`
 			: ""
 
+		const preamble = devMode
+			? `<script type="module">
+  import RefreshRuntime from "http://localhost:5173/@react-refresh"
+  RefreshRuntime.injectIntoGlobalHook(window)
+  window.$RefreshReg$ = () => {}
+  window.$RefreshSig$ = () => (type) => type
+  window.__vite_plugin_react_preamble_installed__ = true
+</script>`
+			: ""
+
 		return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,6 +170,7 @@ export abstract class WebviewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TOOLIFY</title>
   ${devMode ? `<meta http-equiv="Content-Security-Policy" content="${csp}">` : ""}
+  ${preamble}
   ${devMode ? "" : `<link rel="stylesheet" href="${cssUri.toString()}" />`}
 </head>
 <body>
