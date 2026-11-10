@@ -11,7 +11,7 @@
   "activationEvents": [
     "*"
   ],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -44,7 +44,7 @@
     "test:watch": "bun test --watch",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "typecheck:webview": "cd webview-ui && npx tsc --noEmit --skipLibCheck",
-    "build": "npm run build:webview && esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode --external:react --external:react-devtools-core --external:dotenv",
+    "build": "npm run build:webview && esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.cjs --external:vscode --external:react --external:react-devtools-core --external:dotenv",
     "build:webview": "cd webview-ui && npx vite build",
     "launch": "code --extensionDevelopmentPath=. --reuse-window",
     "vscode": "node scripts/start.cjs",
