@@ -1,15 +1,5 @@
-/**
- * VscodeWebviewProvider — concrete WebviewViewProvider for VS Code.
- *
- * Implements the `vscode.WebviewViewProvider` interface so VS Code can
- * embed the NEXIPI UI inside its sidebar (the `nexipiChatView` view
- * contributed in package.json).
- *
- * All gRPC service handlers are registered on the base `WebviewProvider`.
- * State snapshots and streaming chunks from the agent loop are pushed to
- * the webview via `postMessage` (implemented here as `webview.postMessage`).
- */
-import * as vscode from "vscode"
+﻿import * as vscode from "vscode"
+import * as fs from "node:fs"
 import type { WebviewMessage } from "../../shared/WebviewMessage.js"
 import type { ExtensionMessage } from "../../shared/ExtensionMessage.js"
 import { WebviewProvider } from "../../core/webview/WebviewProvider.js"
@@ -33,23 +23,17 @@ export class VscodeWebviewProvider extends WebviewProvider {
 	): void {
 		this._webview = webviewView.webview
 
+		const webviewUiRoot = vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui")
 		this._webview.options = {
 			enableScripts: true,
 			localResourceRoots: [
 				vscode.Uri.joinPath(this.context.extensionUri, "dist"),
-				vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui"),
+				webviewUiRoot,
 			],
 		}
 
-		// Build HTML with resolved asset URIs.
-		const jsUri = this._webview.asWebviewUri(
-			vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui", "assets", "index.js"),
-		)
-		const cssUri = this._webview.asWebviewUri(
-			vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview-ui", "assets", "index.css"),
-		)
-
-		this._webview.html = this.getHtml(jsUri, cssUri)
+		const indexPath = vscode.Uri.joinPath(webviewUiRoot, "index.html")
+		this._webview.html = this.getWebviewHtml(indexPath, webviewUiRoot)
 
 		this._disposable = this._webview.onDidReceiveMessage((msg: any) => {
 			this.handleWebviewMessage(msg as WebviewMessage).catch((err) => {
@@ -57,6 +41,49 @@ export class VscodeWebviewProvider extends WebviewProvider {
 			})
 		})
 		this.context.subscriptions.push(this._disposable)
+	}
+
+	private getWebviewHtml(indexPath: vscode.Uri, webviewUiRoot: vscode.Uri): string {
+		const devMode = process.env.TOOLIFY_WEBVIEW_DEV === "true"
+		if (devMode) {
+			return this.getHtml(
+				this._webview.asWebviewUri(vscode.Uri.joinPath(webviewUiRoot, "assets", "index.js")),
+				this._webview.asWebviewUri(vscode.Uri.joinPath(webviewUiRoot, "assets", "index.css")),
+			)
+		}
+
+		let html = fs.readFileSync(indexPath.fsPath, "utf8")
+		const nonce = this.getNonce()
+		const cspSource = this._webview.cspSource
+
+		// Rewrite relative asset URLs (./assets/... or assets/...) to webview URIs.
+		html = html.replace(
+			/(src|href)=["']\.?\/?(assets\/[^"']+)["']/g,
+			(_m, attr: string, assetPath: string) => {
+				const assetUri = this._webview.asWebviewUri(
+					vscode.Uri.joinPath(webviewUiRoot, ...assetPath.split("/")),
+				)
+				return `${attr}="${assetUri.toString()}"`
+			},
+		)
+
+		const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource} data:; script-src 'nonce-${nonce}'; connect-src ${cspSource} https:;">`
+		if (/<head[^>]*>/i.test(html)) {
+			html = html.replace(/<head[^>]*>/i, (m) => `${m}\n    ${csp}`)
+		} else {
+			html = `${csp}\n${html}`
+		}
+
+		// Add nonce to script tags so CSP allows them.
+		html = html.replace(/<script(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`)
+		return html
+	}
+
+	private getNonce(): string {
+		const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+		let value = ""
+		for (let i = 0; i < 32; i++) value += chars.charAt(Math.floor(Math.random() * chars.length))
+		return value
 	}
 
 	postMessage(message: ExtensionMessage): Thenable<boolean> {
