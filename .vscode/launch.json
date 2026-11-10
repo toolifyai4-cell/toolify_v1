@@ -8,7 +8,8 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extension=GitHub.copilot-chat"
+        "--disable-extension=GitHub.copilot-chat",
+        "--disable-extension=saoudrizwan.claude-dev"
       ],
       "outFiles": ["${workspaceFolder}/dist/extension.cjs"],
       "preLaunchTask": "npm: build",
@@ -21,7 +22,8 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "--disable-extension=GitHub.copilot-chat"
+        "--disable-extension=GitHub.copilot-chat",
+        "--disable-extension=saoudrizwan.claude-dev"
       ],
       "outFiles": ["${workspaceFolder}/dist/extension.cjs"],
       "env": {
