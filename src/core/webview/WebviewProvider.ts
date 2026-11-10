@@ -149,6 +149,9 @@ export abstract class WebviewProvider {
 	getHtml(jsUri: vscode.Uri, cssUri: vscode.Uri): string {
 		const devMode = process.env.TOOLIFY_WEBVIEW_DEV === "true"
 		const scriptSrc = devMode ? "http://localhost:5173/src/main.tsx" : jsUri.toString()
+		const csp = devMode
+			? `default-src 'none'; img-src https: data: http://localhost:5173; style-src 'unsafe-inline' http://localhost:5173; font-src https: data: http://localhost:5173; script-src 'unsafe-eval' 'unsafe-inline' http://localhost:5173; connect-src http://localhost:5173 ws://localhost:5173 https:;`
+			: ""
 
 		return `<!DOCTYPE html>
 <html lang="en">
@@ -156,24 +159,12 @@ export abstract class WebviewProvider {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TOOLIFY</title>
+  ${devMode ? `<meta http-equiv="Content-Security-Policy" content="${csp}">` : ""}
   ${devMode ? "" : `<link rel="stylesheet" href="${cssUri.toString()}" />`}
 </head>
 <body>
   <div id="root"></div>
-  <script>
-    window.acquireVsCodeApi = (function () {
-      const vscodeProxy = {
-        postMessage: function (msg) {
-          const evt = new MessageEvent('message', { data: msg, source: window, origin: '' });
-          window.dispatchEvent(evt);
-          return true;
-        },
-        getState: function () { return {}; },
-        setState: function () {},
-      };
-      return function () { return vscodeProxy; };
-    })();
-  </script>
+  ${devMode ? `<script type="module" src="http://localhost:5173/@vite/client"></script>` : ""}
   <script type="module" src="${scriptSrc}"></script>
 </body>
 </html>`
