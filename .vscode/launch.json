@@ -5,9 +5,12 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "runtimeExecutable": "${execBin}",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
-      "outFiles": ["${workspaceFolder}/dist/extension.js"],
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extension=GitHub.copilot-chat"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/extension.cjs"],
       "preLaunchTask": "npm: build",
       "console": "integratedTerminal"
     },
@@ -15,9 +18,12 @@
       "name": "Run Extension (Webview Hot Reload)",
       "type": "extensionHost",
       "request": "launch",
-      "runtimeExecutable": "${execBin}",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
-      "outFiles": ["${workspaceFolder}/dist/extension.js"],
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extension=GitHub.copilot-chat"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/extension.cjs"],
       "env": {
         "TOOLIFY_WEBVIEW_DEV": "true"
       },
