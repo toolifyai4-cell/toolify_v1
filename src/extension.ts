@@ -13,45 +13,47 @@ import { CommandRunner } from "./core/controller/CommandRunner.js"
 import { agentSessionManager } from "./extension/agent-session-manager.js"
 
 export function activate(context: vscode.ExtensionContext): void {
-	const { extensionUri } = context
+	console.log("NEXIPI ACTIVATED")
+	try {
+		const { extensionUri } = context
 
-	const provider = new VscodeWebviewProvider(extensionUri, context)
-	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider(
-			"nexipiChatView",
-			provider
+		const provider = new VscodeWebviewProvider(extensionUri, context)
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider("nexipiChatView", provider)
 		)
-	)
 
-	// Register the nexipi.openChat command so executing it focuses nexipiChatView
-	const disposable = vscode.commands.registerCommand("nexipi.openChat", () => {
-		vscode.window.showInformationMessage("Nexipi chat opening...")
-		vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView")
-	})
-	context.subscriptions.push(disposable)
+		// Register the nexipi.openChat command so executing it focuses nexipiChatView
+		const disposable = vscode.commands.registerCommand("nexipi.openChat", () => {
+			vscode.window.showInformationMessage("Nexipi chat opening...")
+			vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView")
+		})
+		context.subscriptions.push(disposable)
 
-	// Register all gRPC service handlers that the webview can call.
-	const commandRunner = new CommandRunner(provider)
-	provider.registerService("StateService", commandRunner)
-	provider.registerService("ChatService", commandRunner)
-	provider.registerService("ConfigService", commandRunner)
-	provider.registerService("TerminalService", commandRunner)
-	provider.registerService("AuthService", commandRunner)
+		// Register all gRPC service handlers that the webview can call.
+		const commandRunner = new CommandRunner(provider)
+		provider.registerService("StateService", commandRunner)
+		provider.registerService("ChatService", commandRunner)
+		provider.registerService("ConfigService", commandRunner)
+		provider.registerService("TerminalService", commandRunner)
+		provider.registerService("AuthService", commandRunner)
 
-	// Register the session manager for disposal on deactivation.
-	context.subscriptions.push(agentSessionManager)
-	context.subscriptions.push({ dispose: () => provider.dispose() })
+		// Register the session manager for disposal on deactivation.
+		context.subscriptions.push(agentSessionManager)
+		context.subscriptions.push({ dispose: () => provider.dispose() })
 
-	// Auto-focus the Explorer sidebar and reveal the NEXIPI view.
-	// The small delay ensures VS Code has registered the view first.
-	setTimeout(() => {
-		Promise.resolve(
-			vscode.commands.executeCommand("workbench.view.explorer"),
-		).catch(() => {})
-		Promise.resolve(
-			vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView"),
-		).catch(() => {})
-	}, 500)
+		// Auto-focus the Explorer sidebar and reveal the NEXIPI view.
+		// The small delay ensures VS Code has registered the view first.
+		setTimeout(() => {
+			Promise.resolve(
+				vscode.commands.executeCommand("workbench.view.explorer"),
+			).catch(() => {})
+			Promise.resolve(
+				vscode.commands.executeCommand("workbench.action.showView", "nexipiChatView"),
+			).catch(() => {})
+		}, 500)
+	} catch (err) {
+		console.error("NEXIPI ACTIVATION FAILED:", err)
+	}
 }
 
 export function deactivate(): void {
